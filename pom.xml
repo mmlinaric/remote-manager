@@ -25,6 +25,7 @@
         <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-core</artifactId><version>13.8.0</version></dependency>
         <dependency><groupId>com.hierynomus</groupId><artifactId>sshj</artifactId><version>0.41.1</version></dependency>
         <dependency><groupId>org.jetbrains.jediterm</groupId><artifactId>jediterm-ui</artifactId><version>3.66</version></dependency>
+        <dependency><groupId>org.jetbrains.jediterm</groupId><artifactId>jediterm-core</artifactId><version>3.66</version></dependency>
         <dependency><groupId>de.soderer</groupId><artifactId>kdbx</artifactId><version>26.1.1</version></dependency>
         <dependency><groupId>net.java.dev.jna</groupId><artifactId>jna</artifactId><version>5.18.1</version></dependency>
         <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId><version>2.0.17</version></dependency>

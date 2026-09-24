@@ -1,0 +1,229 @@
+package com.example.remotemanager.ssh;
+
+import com.example.remotemanager.connection.RemoteSession;
+import com.example.remotemanager.model.Connection;
+import com.example.remotemanager.ui.terminal.SshTtyConnector;
+import com.example.remotemanager.vault.Vault;
+import com.example.remotemanager.vault.VaultException;
+import com.hierynomus.sshj.userauth.agent.AgentProxy;
+import com.hierynomus.sshj.userauth.agent.AuthAgent;
+import com.hierynomus.sshj.userauth.keyprovider.OpenSSHKeyV1KeyFile;
+import com.jediterm.terminal.ui.JediTermWidget;
+import com.jediterm.terminal.ui.settings.DefaultSettingsProvider;
+import java.awt.Font;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.Arrays;
+import javax.swing.JComponent;
+import javax.swing.SwingUtilities;
+import net.schmizz.sshj.SSHClient;
+import net.schmizz.sshj.connection.channel.direct.Session;
+import net.schmizz.sshj.userauth.keyprovider.KeyProvider;
+import net.schmizz.sshj.userauth.password.PasswordFinder;
+import net.schmizz.sshj.userauth.password.Resource;
+
+public final class SshRemoteSession implements RemoteSession {
+  public interface KeyPassphrasePrompt {
+    char[] ask(String keyName);
+  }
+
+  private final Connection connection;
+  private final Vault vault;
+  private final Path knownHosts;
+  private final KnownHostsVerifier.Prompt hostPrompt;
+  private final KeyPassphrasePrompt passphrasePrompt;
+  private final JediTermWidget terminal;
+
+  private volatile SSHClient client;
+  private volatile Session channel;
+  private volatile Session.Shell shell;
+
+  public SshRemoteSession(
+      Connection connection,
+      Vault vault,
+      Path knownHosts,
+      KnownHostsVerifier.Prompt hostPrompt,
+      KeyPassphrasePrompt passphrasePrompt,
+      String fontName,
+      int fontSize,
+      int scrollback) {
+    this.connection = connection;
+    this.vault = vault;
+    this.knownHosts = knownHosts;
+    this.hostPrompt = hostPrompt;
+    this.passphrasePrompt = passphrasePrompt;
+    this.terminal =
+        new JediTermWidget(
+            new DefaultSettingsProvider() {
+              @Override
+              public Font getTerminalFont() {
+                return new Font(fontName, Font.PLAIN, fontSize);
+              }
+
+              @Override
+              public int getBufferMaxLinesCount() {
+                return scrollback;
+              }
+            });
+  }
+
+  @Override
+  public void connect() throws Exception {
+    SSHClient ssh = new SSHClient();
+    client = ssh;
+    try {
+      ssh.setConnectTimeout(10000);
+      ssh.setTimeout(10000);
+      ssh.addHostKeyVerifier(new KnownHostsVerifier(knownHosts, hostPrompt));
+      ssh.connect(connection.hostname(), connection.port());
+      authenticate(ssh);
+
+      Session session = ssh.startSession();
+      channel = session;
+      session.allocatePTY("xterm-256color", 80, 24, 0, 0, java.util.Map.of());
+      Session.Shell openedShell = session.startShell();
+      shell = openedShell;
+
+      SwingUtilities.invokeAndWait(
+          () -> {
+            terminal.setTtyConnector(new SshTtyConnector(openedShell));
+            terminal.start();
+          });
+    } catch (Exception error) {
+      disconnect();
+      throw error;
+    }
+  }
+
+  private void authenticate(SSHClient ssh) throws Exception {
+    switch (connection.authenticationType()) {
+      case KDBX_PRIVATE_KEY -> authenticateVaultKey(ssh);
+      case SSH_AGENT -> authenticateAgent(ssh);
+      case PRIVATE_KEY_FILE -> authenticateFileKey(ssh);
+      case PASSWORD -> authenticatePassword(ssh);
+    }
+  }
+
+  private void authenticatePassword(SSHClient ssh) throws Exception {
+    char[] password =
+        vault
+            .getPassword(connection.sshCredentialEntryId())
+            .orElseThrow(() -> new VaultException("SSH password is missing in KeePass"));
+    try {
+      ssh.authPassword(connection.username(), password);
+    } finally {
+      Arrays.fill(password, '\0');
+    }
+  }
+
+  private void authenticateVaultKey(SSHClient ssh) throws Exception {
+    byte[] key =
+        vault
+            .getAttachment(connection.sshCredentialEntryId(), connection.privateKeyAttachmentName())
+            .orElseThrow(() -> new VaultException("SSH key attachment is missing in KeePass"));
+    char[] passphrase = vault.getPassword(connection.sshCredentialEntryId()).orElse(null);
+    try {
+      OpenSSHKeyV1KeyFile provider = new OpenSSHKeyV1KeyFile();
+      try (InputStreamReader reader =
+          new InputStreamReader(new ByteArrayInputStream(key), StandardCharsets.UTF_8)) {
+        provider.init(reader, fixedPassword(passphrase));
+        ssh.authPublickey(connection.username(), provider);
+      }
+    } finally {
+      Arrays.fill(key, (byte) 0);
+      if (passphrase != null) {
+        Arrays.fill(passphrase, '\0');
+      }
+    }
+  }
+
+  private void authenticateFileKey(SSHClient ssh) throws Exception {
+    String configured = connection.privateKeyFilePath();
+    Path path = expandHome(configured);
+    KeyProvider key =
+        ssh.loadKeys(path.toString(), promptingPassword(path.getFileName().toString()));
+    ssh.authPublickey(connection.username(), key);
+  }
+
+  private void authenticateAgent(SSHClient ssh) throws Exception {
+    try (AgentProxy agent = AgentProxy.fromEnvironment()) {
+      var methods = AuthAgent.fromIdentities(agent);
+      if (methods.isEmpty()) {
+        throw new IOException("SSH agent has no available identities");
+      }
+      ssh.auth(connection.username(), methods);
+    }
+  }
+
+  private PasswordFinder fixedPassword(char[] password) {
+    return new PasswordFinder() {
+      @Override
+      public char[] reqPassword(Resource<?> resource) {
+        return password;
+      }
+
+      @Override
+      public boolean shouldRetry(Resource<?> resource) {
+        return false;
+      }
+    };
+  }
+
+  private PasswordFinder promptingPassword(String name) {
+    return new PasswordFinder() {
+      @Override
+      public char[] reqPassword(Resource<?> resource) {
+        return passphrasePrompt.ask(name);
+      }
+
+      @Override
+      public boolean shouldRetry(Resource<?> resource) {
+        return false;
+      }
+    };
+  }
+
+  private static Path expandHome(String configured) {
+    if (configured.startsWith("~/") || configured.startsWith("~\\")) {
+      return Path.of(System.getProperty("user.home"), configured.substring(2));
+    }
+    return Path.of(configured);
+  }
+
+  @Override
+  public void disconnect() {
+    Session currentChannel = channel;
+    SSHClient currentClient = client;
+    channel = null;
+    shell = null;
+    client = null;
+    if (currentChannel != null) {
+      try {
+        currentChannel.close();
+      } catch (IOException ignored) {
+        // Continue closing the client even if the channel has closed remotely.
+      }
+    }
+    if (currentClient != null) {
+      try {
+        currentClient.close();
+      } catch (IOException ignored) {
+        // There is no further network resource to release.
+      }
+    }
+    SwingUtilities.invokeLater(terminal::stop);
+  }
+
+  @Override
+  public boolean isConnected() {
+    return client != null && client.isConnected() && shell != null && shell.isOpen();
+  }
+
+  @Override
+  public JComponent component() {
+    return terminal;
+  }
+}
