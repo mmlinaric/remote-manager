@@ -7,6 +7,7 @@ import com.example.remotemanager.persistence.ConnectionRepository;
 import com.example.remotemanager.persistence.SettingsRepository;
 import com.example.remotemanager.ui.connections.ConnectionEditor;
 import com.example.remotemanager.ui.terminal.SessionTabs;
+import com.example.remotemanager.ui.vault.VaultBrowserDialog;
 import com.example.remotemanager.vault.VaultEntry;
 import com.example.remotemanager.vault.kdbx.KdbxVault;
 import java.awt.BorderLayout;
@@ -16,6 +17,7 @@ import java.awt.event.MouseEvent;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -98,8 +100,11 @@ public final class MainWindow extends JFrame {
     file.add(item("Delete selected", this::deleteSelected));
     file.addSeparator();
     file.add(item("Open vault", this::openVault));
+    file.add(item("Create vault", this::createVault));
     file.add(item("Unlock vault", () -> unlockVaultAsync()));
     file.add(item("Lock vault", this::lockVault));
+    file.add(item("Reload vault", this::reloadVault));
+    file.add(item("Browse vault entries", this::browseVault));
     JMenu session = new JMenu("Session");
     session.add(item("Disconnect", tabs::disconnectSelected));
     session.add(item("Reconnect", tabs::reconnectSelected));
@@ -194,6 +199,20 @@ public final class MainWindow extends JFrame {
   }
 
   private void editConnection(Connection current) {
+    if (vault != null && !vault.isUnlocked()) {
+      unlockVaultAsync()
+          .thenAccept(
+              unlocked -> {
+                if (unlocked) {
+                  SwingUtilities.invokeLater(() -> showConnectionEditor(current));
+                }
+              });
+      return;
+    }
+    showConnectionEditor(current);
+  }
+
+  private void showConnectionEditor(Connection current) {
     UUID parent = selectedValue() instanceof ConnectionFolder folder ? folder.id() : null;
     List<VaultEntry> entries = vault != null && vault.isUnlocked() ? vaultEntries() : List.of();
     ConnectionEditor editor = new ConnectionEditor(this, current, parent, folders, entries);
@@ -246,6 +265,84 @@ public final class MainWindow extends JFrame {
     vault = new KdbxVault(chooser.getSelectedFile().toPath());
     runDatabaseAction(() -> settings.put("vault.path", vault.path().toString()));
     showStatus("Vault selected: " + vault.path());
+  }
+
+  private void createVault() {
+    JFileChooser chooser = new JFileChooser();
+    if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
+      return;
+    }
+    JPasswordField first = new JPasswordField(24);
+    JPasswordField second = new JPasswordField(24);
+    JPanel fields = new JPanel(new java.awt.GridLayout(2, 2, 4, 4));
+    fields.add(new JLabel("Master password:"));
+    fields.add(first);
+    fields.add(new JLabel("Confirm password:"));
+    fields.add(second);
+    if (JOptionPane.showConfirmDialog(
+            this, fields, "Create KeePass vault", JOptionPane.OK_CANCEL_OPTION)
+        != JOptionPane.OK_OPTION) {
+      return;
+    }
+    char[] password = first.getPassword();
+    char[] confirmation = second.getPassword();
+    first.setText("");
+    second.setText("");
+    if (password.length == 0 || !Arrays.equals(password, confirmation)) {
+      Arrays.fill(password, '\0');
+      Arrays.fill(confirmation, '\0');
+      showStatus("Vault passwords did not match");
+      return;
+    }
+    Arrays.fill(confirmation, '\0');
+    Path file = chooser.getSelectedFile().toPath();
+    CompletableFuture.runAsync(
+            () -> {
+              try {
+                KdbxVault.create(file, password);
+              } catch (Exception error) {
+                throw new RuntimeException(error);
+              } finally {
+                Arrays.fill(password, '\0');
+              }
+            })
+        .whenComplete(
+            (ignored, error) ->
+                SwingUtilities.invokeLater(
+                    () -> {
+                      if (error == null) {
+                        lockVault();
+                        vault = new KdbxVault(file);
+                        runDatabaseAction(
+                            () -> settings.put("vault.path", file.toAbsolutePath().toString()));
+                        showStatus("Vault created: " + file);
+                      } else {
+                        showError("Could not create vault", error);
+                      }
+                    }));
+  }
+
+  private void browseVault() {
+    if (vault == null) {
+      showStatus("Select a KeePass vault first");
+      return;
+    }
+    unlockVaultAsync()
+        .thenAccept(
+            unlocked -> {
+              if (unlocked) {
+                SwingUtilities.invokeLater(
+                    () -> new VaultBrowserDialog(this, vault).setVisible(true));
+              }
+            });
+  }
+
+  private void reloadVault() {
+    if (vault == null) {
+      return;
+    }
+    vault.lock();
+    unlockVaultAsync();
   }
 
   private void loadSettings() {
