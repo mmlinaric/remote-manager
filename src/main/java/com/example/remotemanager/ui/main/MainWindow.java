@@ -4,8 +4,8 @@ import com.example.remotemanager.model.Connection;
 import com.example.remotemanager.model.ConnectionFolder;
 import com.example.remotemanager.persistence.ConnectionRepository;
 import com.example.remotemanager.persistence.SettingsRepository;
-import com.example.remotemanager.ui.connections.ConnectionDetailsPanel;
 import com.example.remotemanager.ui.connections.ConnectionEditor;
+import com.example.remotemanager.ui.connections.ConnectionTreePanel;
 import com.example.remotemanager.ui.settings.AppSettings;
 import com.example.remotemanager.ui.settings.SettingsDialog;
 import com.example.remotemanager.ui.terminal.SessionTabs;
@@ -14,16 +14,12 @@ import com.example.remotemanager.vault.VaultEntry;
 import com.example.remotemanager.vault.kdbx.KdbxVault;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import javax.swing.JButton;
@@ -36,22 +32,15 @@ import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
-import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTextField;
 import javax.swing.JToolBar;
-import javax.swing.JTree;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
-import javax.swing.tree.DefaultMutableTreeNode;
-import javax.swing.tree.DefaultTreeModel;
-import javax.swing.tree.TreePath;
 
 public final class MainWindow extends JFrame {
   private final ConnectionRepository connections;
   private final SettingsRepository settings;
-  private final JTree tree = new JTree(new DefaultMutableTreeNode("Connections"));
-  private final ConnectionDetailsPanel details = new ConnectionDetailsPanel();
   private final JLabel status = new JLabel("Ready");
   private final JTextField quickConnect = new JTextField(24);
   private AppSettings preferences = AppSettings.defaults();
@@ -59,14 +48,9 @@ public final class MainWindow extends JFrame {
   private KdbxVault vault;
   private final SessionTabs tabs =
       new SessionTabs(() -> vault, this::unlockVaultAsync, this::showStatus, () -> preferences);
+  private final ConnectionTreePanel connectionTree = new ConnectionTreePanel(tabs::open);
   private final JSplitPane split = createContent();
   private final Timer autoLockTimer = new Timer(15000, event -> autoLockVault());
-
-  private List<ConnectionFolder> folders = List.of();
-  private List<Connection> loadedConnections = List.of();
-  private String savedExpandedFolders = "";
-  private String savedSelection = "";
-  private boolean treeLoaded;
 
   public MainWindow(ConnectionRepository connections, SettingsRepository settings) {
     super("Remote Manager");
@@ -81,19 +65,6 @@ public final class MainWindow extends JFrame {
     add(split, BorderLayout.CENTER);
     add(status, BorderLayout.SOUTH);
 
-    tree.addMouseListener(
-        new MouseAdapter() {
-          @Override
-          public void mouseClicked(MouseEvent event) {
-            if (event.getClickCount() == 2 && selectedValue() instanceof Connection connection) {
-              tabs.open(connection);
-            }
-          }
-        });
-    tree.addTreeSelectionListener(
-        event ->
-            details.showConnection(
-                selectedValue() instanceof Connection connection ? connection : null));
     addWindowListener(
         new WindowAdapter() {
           @Override
@@ -159,10 +130,8 @@ public final class MainWindow extends JFrame {
   }
 
   private JSplitPane createContent() {
-    JPanel treePanel = new JPanel(new BorderLayout());
-    treePanel.add(new JLabel("Connections"), BorderLayout.NORTH);
-    treePanel.add(new JScrollPane(tree), BorderLayout.CENTER);
-    JSplitPane left = new JSplitPane(JSplitPane.VERTICAL_SPLIT, treePanel, details);
+    JSplitPane left =
+        new JSplitPane(JSplitPane.VERTICAL_SPLIT, connectionTree, connectionTree.details());
     left.setResizeWeight(1.0);
     left.setDividerLocation(420);
     JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, tabs);
@@ -196,8 +165,8 @@ public final class MainWindow extends JFrame {
     int width = getWidth();
     int height = getHeight();
     int divider = split.getDividerLocation();
-    String expanded = expandedFolders();
-    String selected = selectionId();
+    String expanded = connectionTree.expandedIds();
+    String selected = connectionTree.selectedId();
     CompletableFuture.runAsync(
             () -> {
               try {
@@ -224,10 +193,6 @@ public final class MainWindow extends JFrame {
   }
 
   private void refreshTree() {
-    if (treeLoaded) {
-      savedExpandedFolders = expandedFolders();
-      savedSelection = selectionId();
-    }
     CompletableFuture.supplyAsync(
             () -> {
               try {
@@ -243,94 +208,20 @@ public final class MainWindow extends JFrame {
                       if (error != null) {
                         showError("Could not load connections", error);
                       } else {
-                        folders = data.folders();
-                        loadedConnections = data.connections();
-                        tree.setModel(buildTree(data));
-                        restoreTreeState();
-                        treeLoaded = true;
+                        connectionTree.showConnections(data.folders(), data.connections());
                       }
                     }));
   }
 
-  private DefaultTreeModel buildTree(TreeData data) {
-    DefaultMutableTreeNode root = new DefaultMutableTreeNode("Connections");
-    Map<UUID, DefaultMutableTreeNode> nodes = new HashMap<>();
-    for (ConnectionFolder folder : data.folders()) {
-      nodes.put(folder.id(), new DefaultMutableTreeNode(folder));
-    }
-    for (ConnectionFolder folder : data.folders()) {
-      DefaultMutableTreeNode parent = nodes.getOrDefault(folder.parentFolderId(), root);
-      parent.add(nodes.get(folder.id()));
-    }
-    for (Connection connection : data.connections()) {
-      nodes
-          .getOrDefault(connection.parentFolderId(), root)
-          .add(new DefaultMutableTreeNode(connection));
-    }
-    return new DefaultTreeModel(root);
-  }
-
-  private String expandedFolders() {
-    Object root = tree.getModel().getRoot();
-    var paths = tree.getExpandedDescendants(new TreePath(root));
-    if (paths == null) {
-      return "";
-    }
-    List<String> ids = new java.util.ArrayList<>();
-    while (paths.hasMoreElements()) {
-      Object node = paths.nextElement().getLastPathComponent();
-      if (node instanceof DefaultMutableTreeNode treeNode
-          && treeNode.getUserObject() instanceof ConnectionFolder folder) {
-        ids.add(folder.id().toString());
-      }
-    }
-    return String.join(",", ids);
-  }
-
-  private String selectionId() {
-    Object selected = selectedValue();
-    if (selected instanceof Connection connection) {
-      return connection.id().toString();
-    }
-    if (selected instanceof ConnectionFolder folder) {
-      return folder.id().toString();
-    }
-    return "";
-  }
-
-  private void restoreTreeState() {
-    if (!(tree.getModel().getRoot() instanceof DefaultMutableTreeNode root)) {
-      return;
-    }
-    List<String> expanded = List.of(savedExpandedFolders.split(","));
-    var nodes = root.depthFirstEnumeration();
-    while (nodes.hasMoreElements()) {
-      DefaultMutableTreeNode node = (DefaultMutableTreeNode) nodes.nextElement();
-      Object value = node.getUserObject();
-      String id = null;
-      if (value instanceof ConnectionFolder folder) {
-        id = folder.id().toString();
-        if (expanded.contains(id)) {
-          tree.expandPath(new TreePath(node.getPath()));
-        }
-      } else if (value instanceof Connection connection) {
-        id = connection.id().toString();
-      }
-      if (savedSelection.equals(id)) {
-        tree.setSelectionPath(new TreePath(node.getPath()));
-      }
-    }
-  }
-
   private void editSelected() {
-    if (selectedValue() instanceof Connection connection) {
+    if (connectionTree.selectedValue() instanceof Connection connection) {
       editConnection(connection);
     }
   }
 
   private void connectFromToolbar() {
     String target = quickConnect.getText().trim();
-    loadedConnections.stream()
+    connectionTree.connections().stream()
         .filter(
             connection ->
                 connection.name().equalsIgnoreCase(target)
@@ -354,9 +245,11 @@ public final class MainWindow extends JFrame {
   }
 
   private void showConnectionEditor(Connection current) {
-    UUID parent = selectedValue() instanceof ConnectionFolder folder ? folder.id() : null;
+    UUID parent =
+        connectionTree.selectedValue() instanceof ConnectionFolder folder ? folder.id() : null;
     List<VaultEntry> entries = vault != null && vault.isUnlocked() ? vaultEntries() : List.of();
-    ConnectionEditor editor = new ConnectionEditor(this, current, parent, folders, entries);
+    ConnectionEditor editor =
+        new ConnectionEditor(this, current, parent, connectionTree.folders(), entries);
     editor.setVisible(true);
     if (editor.result() != null) {
       runDatabaseAction(() -> connections.save(editor.result()));
@@ -377,13 +270,14 @@ public final class MainWindow extends JFrame {
     if (name == null || name.isBlank()) {
       return;
     }
-    UUID parent = selectedValue() instanceof ConnectionFolder folder ? folder.id() : null;
+    UUID parent =
+        connectionTree.selectedValue() instanceof ConnectionFolder folder ? folder.id() : null;
     runDatabaseAction(
         () -> connections.save(new ConnectionFolder(UUID.randomUUID(), parent, name.trim(), 0)));
   }
 
   private void deleteSelected() {
-    Object selected = selectedValue();
+    Object selected = connectionTree.selectedValue();
     if (selected == null
         || JOptionPane.showConfirmDialog(
                 this, "Delete " + selected + "?", "Confirm deletion", JOptionPane.YES_NO_OPTION)
@@ -518,8 +412,8 @@ public final class MainWindow extends JFrame {
                           setLocation(loaded.x(), loaded.y());
                         }
                         split.setDividerLocation(loaded.divider());
-                        savedExpandedFolders = loaded.expandedFolders();
-                        savedSelection = loaded.selection();
+                        connectionTree.restoreOnNextLoad(
+                            loaded.expandedFolders(), loaded.selection());
                       } else if (error != null) {
                         showError("Could not load settings", error);
                       }
@@ -594,13 +488,6 @@ public final class MainWindow extends JFrame {
                         showError("Could not save change", error);
                       }
                     }));
-  }
-
-  private Object selectedValue() {
-    if (tree.getLastSelectedPathComponent() instanceof DefaultMutableTreeNode node) {
-      return node.getUserObject();
-    }
-    return null;
   }
 
   private void showStatus(String text) {
