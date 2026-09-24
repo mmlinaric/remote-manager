@@ -5,7 +5,6 @@ import com.example.remotemanager.persistence.Database;
 import com.example.remotemanager.persistence.SettingsRepository;
 import com.example.remotemanager.ui.main.MainWindow;
 import java.nio.file.Files;
-import java.util.concurrent.CompletableFuture;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
@@ -18,39 +17,30 @@ public final class Main {
   private Main() {}
 
   public static void main(String[] args) {
-    CompletableFuture.supplyAsync(
-            () -> {
-              try {
-                Files.createDirectories(AppPaths.dataDirectory());
-                Database database =
-                    new Database(AppPaths.dataDirectory().resolve("connections.db"));
-                database.migrate();
-                return database;
-              } catch (Exception e) {
-                throw new RuntimeException(e);
-              }
-            })
-        .whenComplete(
-            (database, error) ->
-                SwingUtilities.invokeLater(
-                    () -> {
-                      if (error != null) {
-                        JOptionPane.showMessageDialog(
-                            null,
-                            "Could not initialize application database: "
-                                + error.getCause().getMessage(),
-                            "Startup error",
-                            JOptionPane.ERROR_MESSAGE);
-                        return;
-                      }
-                      try {
-                        UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-                      } catch (Exception lookAndFeelError) {
-                        LOG.warn("Could not select the system look and feel", lookAndFeelError);
-                      }
-                      new MainWindow(
-                              new ConnectionRepository(database), new SettingsRepository(database))
-                          .setVisible(true);
-                    }));
+    try {
+      Files.createDirectories(AppPaths.dataDirectory());
+      Database database = new Database(AppPaths.dataDirectory().resolve("connections.db"));
+      database.migrate();
+      SwingUtilities.invokeLater(() -> showWindow(database));
+    } catch (Exception error) {
+      LOG.error("Could not initialize application database", error);
+      SwingUtilities.invokeLater(
+          () ->
+              JOptionPane.showMessageDialog(
+                  null,
+                  "Could not initialize application database: " + error.getMessage(),
+                  "Startup error",
+                  JOptionPane.ERROR_MESSAGE));
+    }
+  }
+
+  private static void showWindow(Database database) {
+    try {
+      UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+    } catch (Exception error) {
+      LOG.warn("Could not select the system look and feel", error);
+    }
+    new MainWindow(new ConnectionRepository(database), new SettingsRepository(database))
+        .setVisible(true);
   }
 }

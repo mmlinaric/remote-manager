@@ -8,7 +8,7 @@ Install Java 25. The Maven Wrapper downloads Maven if it is not installed locall
 
 ```sh
 ./mvnw test
-./mvnw exec:java
+./mvnw exec:exec
 ```
 
 On Windows, use `mvnw.cmd`. The app uses the system Swing look and feel. Java and its desktop runtime are needed on Windows, Linux, and macOS. Native installers are not included yet; the project can later be packaged with `jpackage`.
