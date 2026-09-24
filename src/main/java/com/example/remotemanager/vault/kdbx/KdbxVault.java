@@ -197,6 +197,7 @@ public final class KdbxVault implements Vault {
     requireUnlocked();
     try {
       verifyUnchanged();
+      verifyMasterPassword(masterPassword);
       Path temporary = Files.createTempFile(path.getParent(), ".remote-manager-", ".kdbx");
       try {
         try (OutputStream output = Files.newOutputStream(temporary);
@@ -252,6 +253,15 @@ public final class KdbxVault implements Vault {
   private void verifyUnchanged() throws Exception {
     if (!MessageDigest.isEqual(loadedDigest, digest(path))) {
       throw new VaultConflictException();
+    }
+  }
+
+  private void verifyMasterPassword(char[] masterPassword) throws VaultException {
+    try (InputStream input = Files.newInputStream(path);
+        KdbxReader reader = new KdbxReader(input)) {
+      reader.readKdbxDatabase(masterPassword);
+    } catch (Exception error) {
+      throw new VaultException("The vault master password is incorrect", error);
     }
   }
 

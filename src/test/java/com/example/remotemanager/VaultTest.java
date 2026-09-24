@@ -28,6 +28,9 @@ class VaultTest {
             Map.of("Environment", "test"),
             "id_ed25519",
             key);
+    assertThrows(
+        com.example.remotemanager.vault.VaultException.class,
+        () -> vault.save("incorrect-master".toCharArray()));
     vault.save(master);
     vault.lock();
     vault.unlock(master);
