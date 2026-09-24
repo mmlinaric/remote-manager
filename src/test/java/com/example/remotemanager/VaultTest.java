@@ -32,6 +32,7 @@ class VaultTest {
         com.example.remotemanager.vault.VaultException.class,
         () -> vault.save("incorrect-master".toCharArray()));
     vault.save(master);
+    assertArrayEquals(key, vault.getAttachment(id, "id_ed25519").orElseThrow());
     vault.lock();
     vault.unlock(master);
     assertEquals(1, vault.entries().size());

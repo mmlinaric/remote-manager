@@ -108,7 +108,7 @@ public final class KdbxVault implements Vault {
         find(id).orElseThrow(() -> new VaultException("KeePass entry is missing")).getBinaries()) {
       if (binary.getKey().equals(attachmentName)) {
         try {
-          return Optional.of(binary.getData());
+          return Optional.ofNullable(binary.getData());
         } catch (Exception e) {
           throw new VaultException("Could not read KeePass attachment", e);
         }
@@ -204,13 +204,15 @@ public final class KdbxVault implements Vault {
             KdbxWriter writer = new KdbxWriter(output)) {
           writer.writeKdbxDatabase(database, masterPassword);
         }
+        KdbxDatabase saved;
         try (InputStream input = Files.newInputStream(temporary);
             KdbxReader reader = new KdbxReader(input)) {
-          reader.readKdbxDatabase(masterPassword);
+          saved = reader.readKdbxDatabase(masterPassword);
         }
         verifyUnchanged();
         Files.move(
             temporary, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        database = saved;
         loadedDigest = digest(path);
       } finally {
         Files.deleteIfExists(temporary);

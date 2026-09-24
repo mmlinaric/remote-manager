@@ -17,6 +17,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JComponent;
 import javax.swing.SwingUtilities;
 import net.schmizz.sshj.SSHClient;
@@ -143,9 +144,18 @@ public final class SshRemoteSession implements RemoteSession {
   private void authenticateFileKey(SSHClient ssh) throws Exception {
     String configured = connection.privateKeyFilePath();
     Path path = expandHome(configured);
-    KeyProvider key =
-        ssh.loadKeys(path.toString(), promptingPassword(path.getFileName().toString()));
-    ssh.authPublickey(connection.username(), key);
+    AtomicReference<char[]> passphrase = new AtomicReference<>();
+    try {
+      KeyProvider key =
+          ssh.loadKeys(
+              path.toString(), promptingPassword(path.getFileName().toString(), passphrase));
+      ssh.authPublickey(connection.username(), key);
+    } finally {
+      char[] entered = passphrase.get();
+      if (entered != null) {
+        Arrays.fill(entered, '\0');
+      }
+    }
   }
 
   private void authenticateAgent(SSHClient ssh) throws Exception {
@@ -176,11 +186,13 @@ public final class SshRemoteSession implements RemoteSession {
     };
   }
 
-  private PasswordFinder promptingPassword(String name) {
+  private PasswordFinder promptingPassword(String name, AtomicReference<char[]> passphrase) {
     return new PasswordFinder() {
       @Override
       public char[] reqPassword(Resource<?> resource) {
-        return passphrasePrompt.ask(name);
+        char[] entered = passphrasePrompt.ask(name);
+        passphrase.set(entered);
+        return entered;
       }
 
       @Override
