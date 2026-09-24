@@ -149,7 +149,11 @@ public final class SshRemoteSession implements RemoteSession {
   }
 
   private void authenticateAgent(SSHClient ssh) throws Exception {
-    try (AgentProxy agent = AgentProxy.fromEnvironment()) {
+    boolean windows = System.getProperty("os.name").toLowerCase().contains("win");
+    try (AgentProxy agent =
+        windows
+            ? new AgentProxy(new WindowsNamedPipeAgentConnection())
+            : AgentProxy.fromEnvironment()) {
       var methods = AuthAgent.fromIdentities(agent);
       if (methods.isEmpty()) {
         throw new IOException("SSH agent has no available identities");

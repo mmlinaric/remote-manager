@@ -28,6 +28,7 @@
         <dependency><groupId>org.jetbrains.jediterm</groupId><artifactId>jediterm-core</artifactId><version>3.66</version></dependency>
         <dependency><groupId>de.soderer</groupId><artifactId>kdbx</artifactId><version>26.1.1</version></dependency>
         <dependency><groupId>net.java.dev.jna</groupId><artifactId>jna</artifactId><version>5.18.1</version></dependency>
+        <dependency><groupId>net.java.dev.jna</groupId><artifactId>jna-platform</artifactId><version>5.18.1</version></dependency>
         <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId><version>2.0.17</version></dependency>
         <dependency><groupId>ch.qos.logback</groupId><artifactId>logback-classic</artifactId><version>1.6.4</version></dependency>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>${junit.version}</version><scope>test</scope></dependency>

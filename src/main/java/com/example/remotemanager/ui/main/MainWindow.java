@@ -1,10 +1,12 @@
 package com.example.remotemanager.ui.main;
 
+import com.example.remotemanager.app.AppPaths;
 import com.example.remotemanager.model.Connection;
 import com.example.remotemanager.model.ConnectionFolder;
 import com.example.remotemanager.persistence.ConnectionRepository;
 import com.example.remotemanager.persistence.SettingsRepository;
 import com.example.remotemanager.ui.connections.ConnectionEditor;
+import com.example.remotemanager.ui.terminal.SessionTabs;
 import com.example.remotemanager.vault.VaultEntry;
 import com.example.remotemanager.vault.kdbx.KdbxVault;
 import java.awt.BorderLayout;
@@ -13,6 +15,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.nio.file.Path;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +33,6 @@ import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
-import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
 import javax.swing.JToolBar;
 import javax.swing.JTree;
@@ -42,19 +44,21 @@ public final class MainWindow extends JFrame {
   private final ConnectionRepository connections;
   private final SettingsRepository settings;
   private final JTree tree = new JTree(new DefaultMutableTreeNode("Connections"));
-  private final JTabbedPane tabs = new JTabbedPane();
   private final JLabel status = new JLabel("Ready");
   private final JTextField quickConnect = new JTextField(24);
-
   private KdbxVault vault;
+  private final SessionTabs tabs =
+      new SessionTabs(() -> vault, this::unlockVaultAsync, this::showStatus, AppPaths.knownHosts());
+
   private List<ConnectionFolder> folders = List.of();
+  private List<Connection> loadedConnections = List.of();
 
   public MainWindow(ConnectionRepository connections, SettingsRepository settings) {
     super("Remote Manager");
     this.connections = connections;
     this.settings = settings;
 
-    setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+    setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
     setMinimumSize(new Dimension(760, 480));
     setSize(1100, 700);
     setJMenuBar(createMenu());
@@ -67,13 +71,22 @@ public final class MainWindow extends JFrame {
           @Override
           public void mouseClicked(MouseEvent event) {
             if (event.getClickCount() == 2 && selectedValue() instanceof Connection connection) {
-              showStatus("SSH session support is being added for " + connection.name());
+              tabs.open(connection);
             }
           }
         });
 
     loadSettings();
     refreshTree();
+  }
+
+  @Override
+  public void dispose() {
+    tabs.shutdown();
+    if (vault != null) {
+      vault.lock();
+    }
+    super.dispose();
   }
 
   private JMenuBar createMenu() {
@@ -85,13 +98,19 @@ public final class MainWindow extends JFrame {
     file.add(item("Delete selected", this::deleteSelected));
     file.addSeparator();
     file.add(item("Open vault", this::openVault));
-    file.add(item("Unlock vault", this::unlockVault));
+    file.add(item("Unlock vault", () -> unlockVaultAsync()));
     file.add(item("Lock vault", this::lockVault));
+    JMenu session = new JMenu("Session");
+    session.add(item("Disconnect", tabs::disconnectSelected));
+    session.add(item("Reconnect", tabs::reconnectSelected));
+    session.add(item("Close tab", tabs::closeSelected));
+    session.add(item("Copy sudo password", () -> tabs.copySudoPassword(Duration.ofSeconds(30))));
     file.addSeparator();
     file.add(item("Exit", this::dispose));
     menuBar.add(file);
     menuBar.add(new JMenu("View"));
     menuBar.add(new JMenu("Tools"));
+    menuBar.add(session);
     menuBar.add(new JMenu("Help"));
     return menuBar;
   }
@@ -102,7 +121,7 @@ public final class MainWindow extends JFrame {
     toolbar.add(new JLabel("Connect: "));
     toolbar.add(quickConnect);
     JButton connect = new JButton("Connect");
-    connect.addActionListener(event -> showStatus("Select a saved connection to connect"));
+    connect.addActionListener(event -> connectFromToolbar());
     toolbar.add(connect);
     return toolbar;
   }
@@ -133,6 +152,7 @@ public final class MainWindow extends JFrame {
                         showError("Could not load connections", error);
                       } else {
                         folders = data.folders();
+                        loadedConnections = data.connections();
                         tree.setModel(buildTree(data));
                       }
                     }));
@@ -160,6 +180,17 @@ public final class MainWindow extends JFrame {
     if (selectedValue() instanceof Connection connection) {
       editConnection(connection);
     }
+  }
+
+  private void connectFromToolbar() {
+    String target = quickConnect.getText().trim();
+    loadedConnections.stream()
+        .filter(
+            connection ->
+                connection.name().equalsIgnoreCase(target)
+                    || connection.hostname().equalsIgnoreCase(target))
+        .findFirst()
+        .ifPresentOrElse(tabs::open, () -> showStatus("No saved connection matches " + target));
   }
 
   private void editConnection(Connection current) {
@@ -238,39 +269,35 @@ public final class MainWindow extends JFrame {
                     }));
   }
 
-  private void unlockVault() {
+  private CompletableFuture<Boolean> unlockVaultAsync() {
     if (vault == null) {
       showStatus("Select a KeePass vault first");
-      return;
+      return CompletableFuture.completedFuture(false);
+    }
+    if (vault.isUnlocked()) {
+      return CompletableFuture.completedFuture(true);
     }
     JPasswordField field = new JPasswordField(24);
     if (JOptionPane.showConfirmDialog(
             this, field, "Vault master password", JOptionPane.OK_CANCEL_OPTION)
         != JOptionPane.OK_OPTION) {
-      return;
+      return CompletableFuture.completedFuture(false);
     }
     char[] password = field.getPassword();
     field.setText("");
-    CompletableFuture.runAsync(
-            () -> {
-              try {
-                vault.unlock(password);
-              } catch (Exception error) {
-                throw new RuntimeException(error);
-              } finally {
-                java.util.Arrays.fill(password, '\0');
-              }
-            })
-        .whenComplete(
-            (ignored, error) ->
-                SwingUtilities.invokeLater(
-                    () -> {
-                      if (error == null) {
-                        showStatus("Vault unlocked");
-                      } else {
-                        showError("Could not unlock vault", error);
-                      }
-                    }));
+    KdbxVault selectedVault = vault;
+    return CompletableFuture.supplyAsync(
+        () -> {
+          try {
+            selectedVault.unlock(password);
+            return true;
+          } catch (Exception error) {
+            SwingUtilities.invokeLater(() -> showError("Could not unlock vault", error));
+            return false;
+          } finally {
+            java.util.Arrays.fill(password, '\0');
+          }
+        });
   }
 
   private void lockVault() {
