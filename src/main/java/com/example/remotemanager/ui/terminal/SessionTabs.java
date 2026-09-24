@@ -262,10 +262,10 @@ public final class SessionTabs extends JTabbedPane {
 
   public void shutdown() {
     for (OpenTab tab : openTabs.values()) {
-      tab.session().disconnect();
+      worker.execute(tab.session()::disconnect);
     }
     openTabs.clear();
-    worker.shutdownNow();
+    worker.shutdown();
     scheduler.shutdownNow();
   }
 
