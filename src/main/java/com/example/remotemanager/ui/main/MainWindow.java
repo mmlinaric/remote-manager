@@ -4,6 +4,7 @@ import com.example.remotemanager.model.Connection;
 import com.example.remotemanager.model.ConnectionFolder;
 import com.example.remotemanager.persistence.ConnectionRepository;
 import com.example.remotemanager.persistence.SettingsRepository;
+import com.example.remotemanager.ui.connections.ConnectionDetailsPanel;
 import com.example.remotemanager.ui.connections.ConnectionEditor;
 import com.example.remotemanager.ui.settings.AppSettings;
 import com.example.remotemanager.ui.settings.SettingsDialog;
@@ -50,6 +51,7 @@ public final class MainWindow extends JFrame {
   private final ConnectionRepository connections;
   private final SettingsRepository settings;
   private final JTree tree = new JTree(new DefaultMutableTreeNode("Connections"));
+  private final ConnectionDetailsPanel details = new ConnectionDetailsPanel();
   private final JLabel status = new JLabel("Ready");
   private final JTextField quickConnect = new JTextField(24);
   private AppSettings preferences = AppSettings.defaults();
@@ -88,6 +90,10 @@ public final class MainWindow extends JFrame {
             }
           }
         });
+    tree.addTreeSelectionListener(
+        event ->
+            details.showConnection(
+                selectedValue() instanceof Connection connection ? connection : null));
     addWindowListener(
         new WindowAdapter() {
           @Override
@@ -98,7 +104,6 @@ public final class MainWindow extends JFrame {
 
     autoLockTimer.start();
     loadSettings();
-    refreshTree();
   }
 
   @Override
@@ -154,9 +159,12 @@ public final class MainWindow extends JFrame {
   }
 
   private JSplitPane createContent() {
-    JPanel left = new JPanel(new BorderLayout());
-    left.add(new JLabel("Connections"), BorderLayout.NORTH);
-    left.add(new JScrollPane(tree), BorderLayout.CENTER);
+    JPanel treePanel = new JPanel(new BorderLayout());
+    treePanel.add(new JLabel("Connections"), BorderLayout.NORTH);
+    treePanel.add(new JScrollPane(tree), BorderLayout.CENTER);
+    JSplitPane left = new JSplitPane(JSplitPane.VERTICAL_SPLIT, treePanel, details);
+    left.setResizeWeight(1.0);
+    left.setDividerLocation(420);
     JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, tabs);
     split.setDividerLocation(300);
     return split;
@@ -512,10 +520,10 @@ public final class MainWindow extends JFrame {
                         split.setDividerLocation(loaded.divider());
                         savedExpandedFolders = loaded.expandedFolders();
                         savedSelection = loaded.selection();
-                        restoreTreeState();
                       } else if (error != null) {
                         showError("Could not load settings", error);
                       }
+                      refreshTree();
                     }));
   }
 

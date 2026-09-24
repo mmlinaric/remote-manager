@@ -99,6 +99,7 @@ public final class VaultBrowserDialog extends JDialog {
       change = form.values();
     } catch (IllegalArgumentException error) {
       Arrays.fill(masterPassword, '\0');
+      form.clearPassword();
       showError(error);
       return;
     }
@@ -242,7 +243,12 @@ public final class VaultBrowserDialog extends JDialog {
         if (equals <= 0) {
           throw new IllegalArgumentException("Custom fields must use key=value lines");
         }
-        custom.put(line.substring(0, equals).trim(), line.substring(equals + 1));
+        String key = line.substring(0, equals).trim();
+        if (List.of("Title", "UserName", "Password", "URL", "Notes").contains(key)) {
+          throw new IllegalArgumentException(
+              "Standard KeePass fields cannot be custom fields: " + key);
+        }
+        custom.put(key, line.substring(equals + 1));
       }
       char[] enteredPassword = password.getPassword();
       return new EntryChange(

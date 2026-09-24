@@ -9,6 +9,7 @@ import de.soderer.utilities.kdbx.KdbxReader;
 import de.soderer.utilities.kdbx.KdbxWriter;
 import de.soderer.utilities.kdbx.data.KdbxEntry;
 import de.soderer.utilities.kdbx.data.KdbxEntryBinary;
+import de.soderer.utilities.kdbx.data.KdbxGroup;
 import de.soderer.utilities.kdbx.data.KdbxUUID;
 import java.io.IOException;
 import java.io.InputStream;
@@ -126,8 +127,18 @@ public final class KdbxVault implements Vault {
       throws VaultException {
     requireUnlocked();
     KdbxEntry entry = new KdbxEntry();
+    entry.setAutoType(false, "0", "", "", "");
     updateValues(entry, title, username, password, fields, attachmentName, attachment);
-    database.getEntries().add(entry);
+    if (database.getGroups().isEmpty()) {
+      KdbxGroup root =
+          new KdbxGroup()
+              .withName("RemoteManager")
+              .withIconID(48)
+              .withUuid(new KdbxUUID())
+              .withLastTopVisibleEntry(new KdbxUUID(new byte[16]));
+      database.getGroups().add(root);
+    }
+    database.getGroups().getFirst().getEntries().add(entry);
     return toUuid(entry.getUuid());
   }
 
@@ -155,6 +166,13 @@ public final class KdbxVault implements Vault {
       throws VaultException {
     if (title == null || title.isBlank()) {
       throw new VaultException("Entry title is required");
+    }
+    if (fields != null) {
+      for (String key : fields.keySet()) {
+        if (List.of("Title", "UserName", "Password", "URL", "Notes").contains(key)) {
+          throw new VaultException("Standard KeePass fields cannot be custom fields: " + key);
+        }
+      }
     }
     entry.setTitle(title);
     entry.setUsername(username == null ? "" : username);
