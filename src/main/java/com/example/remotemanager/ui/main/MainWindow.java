@@ -1,11 +1,12 @@
 package com.example.remotemanager.ui.main;
 
-import com.example.remotemanager.app.AppPaths;
 import com.example.remotemanager.model.Connection;
 import com.example.remotemanager.model.ConnectionFolder;
 import com.example.remotemanager.persistence.ConnectionRepository;
 import com.example.remotemanager.persistence.SettingsRepository;
 import com.example.remotemanager.ui.connections.ConnectionEditor;
+import com.example.remotemanager.ui.settings.AppSettings;
+import com.example.remotemanager.ui.settings.SettingsDialog;
 import com.example.remotemanager.ui.terminal.SessionTabs;
 import com.example.remotemanager.ui.vault.VaultBrowserDialog;
 import com.example.remotemanager.vault.VaultEntry;
@@ -14,9 +15,10 @@ import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.nio.file.Path;
 import java.sql.SQLException;
-import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -39,8 +41,10 @@ import javax.swing.JTextField;
 import javax.swing.JToolBar;
 import javax.swing.JTree;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
+import javax.swing.tree.TreePath;
 
 public final class MainWindow extends JFrame {
   private final ConnectionRepository connections;
@@ -48,24 +52,31 @@ public final class MainWindow extends JFrame {
   private final JTree tree = new JTree(new DefaultMutableTreeNode("Connections"));
   private final JLabel status = new JLabel("Ready");
   private final JTextField quickConnect = new JTextField(24);
+  private AppSettings preferences = AppSettings.defaults();
+  private volatile long lastVaultUse = System.nanoTime();
   private KdbxVault vault;
   private final SessionTabs tabs =
-      new SessionTabs(() -> vault, this::unlockVaultAsync, this::showStatus, AppPaths.knownHosts());
+      new SessionTabs(() -> vault, this::unlockVaultAsync, this::showStatus, () -> preferences);
+  private final JSplitPane split = createContent();
+  private final Timer autoLockTimer = new Timer(15000, event -> autoLockVault());
 
   private List<ConnectionFolder> folders = List.of();
   private List<Connection> loadedConnections = List.of();
+  private String savedExpandedFolders = "";
+  private String savedSelection = "";
+  private boolean treeLoaded;
 
   public MainWindow(ConnectionRepository connections, SettingsRepository settings) {
     super("Remote Manager");
     this.connections = connections;
     this.settings = settings;
 
-    setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+    setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
     setMinimumSize(new Dimension(760, 480));
     setSize(1100, 700);
     setJMenuBar(createMenu());
     add(createToolbar(), BorderLayout.NORTH);
-    add(createContent(), BorderLayout.CENTER);
+    add(split, BorderLayout.CENTER);
     add(status, BorderLayout.SOUTH);
 
     tree.addMouseListener(
@@ -77,13 +88,22 @@ public final class MainWindow extends JFrame {
             }
           }
         });
+    addWindowListener(
+        new WindowAdapter() {
+          @Override
+          public void windowClosing(WindowEvent event) {
+            closeWindow();
+          }
+        });
 
+    autoLockTimer.start();
     loadSettings();
     refreshTree();
   }
 
   @Override
   public void dispose() {
+    autoLockTimer.stop();
     tabs.shutdown();
     if (vault != null) {
       vault.lock();
@@ -109,12 +129,14 @@ public final class MainWindow extends JFrame {
     session.add(item("Disconnect", tabs::disconnectSelected));
     session.add(item("Reconnect", tabs::reconnectSelected));
     session.add(item("Close tab", tabs::closeSelected));
-    session.add(item("Copy sudo password", () -> tabs.copySudoPassword(Duration.ofSeconds(30))));
+    session.add(item("Copy sudo password", tabs::copySudoPassword));
     file.addSeparator();
-    file.add(item("Exit", this::dispose));
+    file.add(item("Exit", this::closeWindow));
     menuBar.add(file);
     menuBar.add(new JMenu("View"));
-    menuBar.add(new JMenu("Tools"));
+    JMenu tools = new JMenu("Tools");
+    tools.add(item("Settings", this::editSettings));
+    menuBar.add(tools);
     menuBar.add(session);
     menuBar.add(new JMenu("Help"));
     return menuBar;
@@ -140,7 +162,64 @@ public final class MainWindow extends JFrame {
     return split;
   }
 
+  private void editSettings() {
+    AppSettings edited = SettingsDialog.edit(this, preferences);
+    if (edited == null) {
+      return;
+    }
+    preferences = edited;
+    runDatabaseAction(() -> edited.save(settings));
+  }
+
+  private void autoLockVault() {
+    int minutes = preferences.vaultAutoLockMinutes();
+    if (vault == null || !vault.isUnlocked() || minutes == 0) {
+      return;
+    }
+    long elapsed = System.nanoTime() - lastVaultUse;
+    if (elapsed >= java.util.concurrent.TimeUnit.MINUTES.toNanos(minutes)) {
+      lockVault();
+    }
+  }
+
+  private void closeWindow() {
+    int x = getX();
+    int y = getY();
+    int width = getWidth();
+    int height = getHeight();
+    int divider = split.getDividerLocation();
+    String expanded = expandedFolders();
+    String selected = selectionId();
+    CompletableFuture.runAsync(
+            () -> {
+              try {
+                settings.put("window.x", Integer.toString(x));
+                settings.put("window.y", Integer.toString(y));
+                settings.put("window.width", Integer.toString(width));
+                settings.put("window.height", Integer.toString(height));
+                settings.put("window.divider", Integer.toString(divider));
+                settings.put("tree.expanded", expanded);
+                settings.put("tree.selected", selected);
+              } catch (SQLException error) {
+                throw new RuntimeException(error);
+              }
+            })
+        .whenComplete(
+            (ignored, error) ->
+                SwingUtilities.invokeLater(
+                    () -> {
+                      if (error != null) {
+                        showError("Could not save window settings", error);
+                      }
+                      dispose();
+                    }));
+  }
+
   private void refreshTree() {
+    if (treeLoaded) {
+      savedExpandedFolders = expandedFolders();
+      savedSelection = selectionId();
+    }
     CompletableFuture.supplyAsync(
             () -> {
               try {
@@ -159,6 +238,8 @@ public final class MainWindow extends JFrame {
                         folders = data.folders();
                         loadedConnections = data.connections();
                         tree.setModel(buildTree(data));
+                        restoreTreeState();
+                        treeLoaded = true;
                       }
                     }));
   }
@@ -179,6 +260,58 @@ public final class MainWindow extends JFrame {
           .add(new DefaultMutableTreeNode(connection));
     }
     return new DefaultTreeModel(root);
+  }
+
+  private String expandedFolders() {
+    Object root = tree.getModel().getRoot();
+    var paths = tree.getExpandedDescendants(new TreePath(root));
+    if (paths == null) {
+      return "";
+    }
+    List<String> ids = new java.util.ArrayList<>();
+    while (paths.hasMoreElements()) {
+      Object node = paths.nextElement().getLastPathComponent();
+      if (node instanceof DefaultMutableTreeNode treeNode
+          && treeNode.getUserObject() instanceof ConnectionFolder folder) {
+        ids.add(folder.id().toString());
+      }
+    }
+    return String.join(",", ids);
+  }
+
+  private String selectionId() {
+    Object selected = selectedValue();
+    if (selected instanceof Connection connection) {
+      return connection.id().toString();
+    }
+    if (selected instanceof ConnectionFolder folder) {
+      return folder.id().toString();
+    }
+    return "";
+  }
+
+  private void restoreTreeState() {
+    if (!(tree.getModel().getRoot() instanceof DefaultMutableTreeNode root)) {
+      return;
+    }
+    List<String> expanded = List.of(savedExpandedFolders.split(","));
+    var nodes = root.depthFirstEnumeration();
+    while (nodes.hasMoreElements()) {
+      DefaultMutableTreeNode node = (DefaultMutableTreeNode) nodes.nextElement();
+      Object value = node.getUserObject();
+      String id = null;
+      if (value instanceof ConnectionFolder folder) {
+        id = folder.id().toString();
+        if (expanded.contains(id)) {
+          tree.expandPath(new TreePath(node.getPath()));
+        }
+      } else if (value instanceof Connection connection) {
+        id = connection.id().toString();
+      }
+      if (savedSelection.equals(id)) {
+        tree.setSelectionPath(new TreePath(node.getPath()));
+      }
+    }
   }
 
   private void editSelected() {
@@ -349,21 +482,49 @@ public final class MainWindow extends JFrame {
     CompletableFuture.supplyAsync(
             () -> {
               try {
-                return settings.get("vault.path");
+                return new LoadedSettings(
+                    settings.get("vault.path").orElse(null),
+                    AppSettings.load(settings),
+                    intSetting("window.x", -1),
+                    intSetting("window.y", -1),
+                    intSetting("window.width", 1100),
+                    intSetting("window.height", 700),
+                    intSetting("window.divider", 300),
+                    settings.get("tree.expanded").orElse(""),
+                    settings.get("tree.selected").orElse(""));
               } catch (SQLException error) {
                 throw new RuntimeException(error);
               }
             })
         .whenComplete(
-            (path, error) ->
+            (loaded, error) ->
                 SwingUtilities.invokeLater(
                     () -> {
-                      if (error == null && path.isPresent()) {
-                        vault = new KdbxVault(Path.of(path.get()));
+                      if (error == null) {
+                        preferences = loaded.preferences();
+                        if (loaded.vaultPath() != null) {
+                          vault = new KdbxVault(Path.of(loaded.vaultPath()));
+                        }
+                        setSize(loaded.width(), loaded.height());
+                        if (loaded.x() >= 0 && loaded.y() >= 0) {
+                          setLocation(loaded.x(), loaded.y());
+                        }
+                        split.setDividerLocation(loaded.divider());
+                        savedExpandedFolders = loaded.expandedFolders();
+                        savedSelection = loaded.selection();
+                        restoreTreeState();
                       } else if (error != null) {
                         showError("Could not load settings", error);
                       }
                     }));
+  }
+
+  private int intSetting(String key, int fallback) throws SQLException {
+    try {
+      return settings.get(key).map(Integer::parseInt).orElse(fallback);
+    } catch (NumberFormatException invalid) {
+      return fallback;
+    }
   }
 
   private CompletableFuture<Boolean> unlockVaultAsync() {
@@ -372,6 +533,7 @@ public final class MainWindow extends JFrame {
       return CompletableFuture.completedFuture(false);
     }
     if (vault.isUnlocked()) {
+      lastVaultUse = System.nanoTime();
       return CompletableFuture.completedFuture(true);
     }
     JPasswordField field = new JPasswordField(24);
@@ -387,6 +549,7 @@ public final class MainWindow extends JFrame {
         () -> {
           try {
             selectedVault.unlock(password);
+            lastVaultUse = System.nanoTime();
             return true;
           } catch (Exception error) {
             SwingUtilities.invokeLater(() -> showError("Could not unlock vault", error));
@@ -449,6 +612,17 @@ public final class MainWindow extends JFrame {
   }
 
   private record TreeData(List<ConnectionFolder> folders, List<Connection> connections) {}
+
+  private record LoadedSettings(
+      String vaultPath,
+      AppSettings preferences,
+      int x,
+      int y,
+      int width,
+      int height,
+      int divider,
+      String expandedFolders,
+      String selection) {}
 
   @FunctionalInterface
   private interface DatabaseAction {

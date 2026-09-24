@@ -4,11 +4,11 @@ import com.example.remotemanager.model.AuthenticationType;
 import com.example.remotemanager.model.Connection;
 import com.example.remotemanager.ssh.KnownHostsVerifier;
 import com.example.remotemanager.ssh.SshRemoteSession;
+import com.example.remotemanager.ui.settings.AppSettings;
 import com.example.remotemanager.util.SecureClipboard;
 import com.example.remotemanager.vault.Vault;
 import java.awt.Component;
 import java.awt.Toolkit;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -27,7 +27,7 @@ public final class SessionTabs extends JTabbedPane {
   private final Supplier<Vault> vaultSupplier;
   private final Supplier<CompletableFuture<Boolean>> unlockVault;
   private final Consumer<String> status;
-  private final Path knownHosts;
+  private final Supplier<AppSettings> settings;
   private final SecureClipboard clipboard;
   private final java.util.concurrent.ExecutorService worker = Executors.newCachedThreadPool();
   private final java.util.concurrent.ScheduledExecutorService scheduler =
@@ -37,11 +37,11 @@ public final class SessionTabs extends JTabbedPane {
       Supplier<Vault> vaultSupplier,
       Supplier<CompletableFuture<Boolean>> unlockVault,
       Consumer<String> status,
-      Path knownHosts) {
+      Supplier<AppSettings> settings) {
     this.vaultSupplier = vaultSupplier;
     this.unlockVault = unlockVault;
     this.status = status;
-    this.knownHosts = knownHosts;
+    this.settings = settings;
     clipboard = new SecureClipboard(Toolkit.getDefaultToolkit().getSystemClipboard(), scheduler);
   }
 
@@ -88,7 +88,7 @@ public final class SessionTabs extends JTabbedPane {
     worker.execute(tab.session()::disconnect);
   }
 
-  public void copySudoPassword(Duration timeout) {
+  public void copySudoPassword() {
     OpenTab tab = selectedTab();
     if (tab == null || tab.connection().sudoCredentialEntryId() == null) {
       status.accept("No sudo credential is assigned to this tab");
@@ -101,6 +101,7 @@ public final class SessionTabs extends JTabbedPane {
               if (!unlocked) {
                 return;
               }
+              Duration timeout = Duration.ofSeconds(settings.get().clipboardSeconds());
               worker.execute(() -> copySudo(tab.connection(), timeout));
             });
   }
@@ -127,16 +128,17 @@ public final class SessionTabs extends JTabbedPane {
   }
 
   private void startTab(Connection connection) {
+    AppSettings preferences = settings.get();
     SshRemoteSession session =
         new SshRemoteSession(
             connection,
             vaultSupplier.get(),
-            knownHosts,
+            preferences.knownHosts(),
             hostPrompt(),
             this::askKeyPassphrase,
-            "Monospaced",
-            13,
-            5000);
+            preferences.terminalFont(),
+            preferences.terminalFontSize(),
+            preferences.scrollbackLines());
     OpenTab tab = new OpenTab(connection, session);
     JComponent component = session.component();
     openTabs.put(component, tab);
