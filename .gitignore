@@ -1,0 +1,7 @@
+/target/
+/.idea/
+*.iml
+*.db
+*.db-shm
+*.db-wal
+*.kdbx
