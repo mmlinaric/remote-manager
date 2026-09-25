@@ -1,56 +1,41 @@
 # Remote Manager
 
-A compact Java 25 desktop SSH connection manager built with Swing. It stores connection metadata in SQLite and credentials in a normal KDBX4 KeePass database.
-
-Interface icons are from the FamFamFam Silk set; see [third-party notices](src/main/resources/THIRD_PARTY_NOTICES.md) for attribution and license details. The notice is included in the application JAR.
+A classic Swing SSH connection manager with reusable identities in a normal KDBX4 KeePass vault. The interface uses FamFamFam Silk icons; see [third-party notices](src/main/resources/THIRD_PARTY_NOTICES.md).
 
 ## Build and run
 
-Install Java 25. The Maven Wrapper downloads Maven if it is not installed locally.
+Install Java 25, then run:
 
 ```sh
 ./mvnw test
 ./mvnw exec:exec
 ```
 
-On Windows, use `mvnw.cmd`. The app uses the system Swing look and feel. Java and its desktop runtime are needed on Windows, Linux, and macOS. Native installers are not included yet; the project can later be packaged with `jpackage`.
+On Windows, use `mvnw.cmd`. The app uses the system Swing look and feel. Native installers are not included yet.
 
-## Design
+## First steps
 
-`app` starts the program and selects OS-specific data paths. `ui` contains the Swing window, connection editor, terminal tabs, vault browser, and settings dialog. `model` defines connection records. `persistence` contains SQLite access and Flyway migrations. `vault` exposes the credential interface and the `kdbx` package implements it. `ssh` contains SSHJ transport and host-key checks. `connection.RemoteSession` is the small protocol-independent session interface.
+1. Create a KeePass vault or open an existing `.kdbx` file. Enter its master password to unlock the workspace.
+2. Click **New identity** to save a reusable SSH password, private key attachment, or sudo password. You can also create an identity while adding a host.
+3. Click **New host**. Enter its address and SSH username, then choose an authentication method. Password and vault private-key methods need a suitable identity; SSH agent and local key-file methods do not.
+4. Save the host and double-click it to connect. The host tree marks missing identities or key attachments and offers to edit the host before connecting.
 
-The SQLite database holds folders, connection names, hosts, usernames, authentication choices, KeePass entry UUID references, and UI settings. It contains no passwords or private keys. Its schema is created through versioned Flyway migrations in `src/main/resources/db/migration`.
+The **Hosts** and **Identities** sidebar sections sit beside terminal tabs. The main workspace stays hidden until the vault is unlocked. Locking the vault disconnects sessions and clears the visible host and identity lists. Auto-lock is based on app activity, defaults to 30 minutes, and can be changed to 5, 15, 30 minutes, or Never in Settings.
 
-The selected `.kdbx` file holds credentials. It remains a normal KeePass/KeePassXC database that you can open independently. Entries are referenced by their KeePass UUIDs, so you can rename or move them without changing the connection reference. On startup the vault is locked; opening it prompts for the master password and shows its entries. The master password is not stored by the app. You can lock or reload the vault from File → Vault. Settings offer automatic locking after 5, 15, or 30 minutes, or never.
+## Data and KeePass compatibility
 
-For a KeePass private key connection, choose a credential entry and the attachment that contains its OpenSSH private key. The entry password may hold the key passphrase. The key is parsed from memory for authentication. Password authentication also uses a KeePass entry. A private key file may be selected instead. SSH agent authentication uses the agent socket on Unix systems or the OpenSSH named pipe on Windows. The agent supplies signatures, so its private key is not copied into the app.
+Hosts and folders are stored inside the selected KDBX file, together with identities. Hosts are KeePass entries in a marked “Remote Manager Hosts” group. Folders are nested KeePass groups. A host's name, address, username, authentication choice, identity references, key-file path, and notes are encrypted with the vault. New identities are saved in a separate “Remote Manager Identities” group. Existing non-host KeePass entries are available as identities. Entries are referenced by UUID, so renaming or moving an identity does not break its host reference.
 
-An example KeePassXC layout:
+The only separate app data is `settings.properties` under the OS-specific Remote Manager data directory. It stores the selected vault path, window geometry, terminal preferences, known-hosts path, and auto-lock setting. It contains no host details or secrets. SQLite and Flyway are no longer used. Old `connections.db` files are not read.
 
-```text
-RemoteManager
-├── Shared
-│   └── Linux sudo
-│       Password: ...
-└── SSH
-    └── Homelab SSH
-        Username: mario
-        Password: optional private-key passphrase
-        Attachment: id_ed25519
-```
+Vault writes check for changes made by another application and reject a conflicting save. Reload the vault to see external edits. The app writes a temporary KDBX file and replaces the original only after checking that the new file can be opened. Keep normal backups of your vault.
 
-Several connections can reference the same SSH or sudo entry UUID. In an SSH tab, use Session > Copy sudo password to copy the assigned sudo password. The user pastes it into the terminal manually. The default clipboard timeout is 30 seconds. Cleanup only clears the clipboard if its text still equals the value copied by this app.
+## Authentication and sessions
 
-The configured OpenSSH `known_hosts` file is checked on each connection. An unknown key requires explicit trust. A changed known key displays both fingerprints and is rejected. There is no setting to disable host-key checking.
+For password authentication, enter an SSH password directly in the host editor. You can also save a sudo password there. These host passwords live in the KeePass vault and do not appear as reusable identities. Leave a saved host password field blank while editing to keep its current value. Choose **Reusable identity** when several hosts should share a credential, or to use a private key attachment. A local private key file or SSH agent can be used without an identity. Copy a host's sudo password from the active session's **Copy sudo password** button or **Session** menu, or right-click the saved host in the tree to copy before connecting. **Ctrl+Shift+P** (Windows/Linux) or **Cmd+Shift+P** (macOS) copies from the selected host when the host tree has focus, otherwise from the active session; if no session is open, it uses the selected host. The password is copied for manual paste. The clipboard is cleared after the configured timeout only if it still contains the value copied by this app.
 
-## Libraries
+Key file buttons open the system file dialog in `~/.ssh` when that directory exists. You can also paste a full path into the private-key attachment field or the host's local key-file field.
 
-SSHJ provides SSH transport, key parsing, authentication, and known-host support. JediTerm provides the Swing VT terminal. The Soderer KDBX library reads and writes KDBX4 entries and attachments. SQLite JDBC stores non-secret metadata, and Flyway applies explicit schema migrations. SLF4J and Logback handle application logging. JNA is used only for the Windows OpenSSH agent named pipe. No application framework or custom cryptography is used.
+The configured OpenSSH `known_hosts` file is checked on each connection. Unknown keys require explicit trust. Changed known keys are rejected. SSHJ handles transport and authentication; JediTerm displays terminal sessions. The Soderer KDBX library reads and writes the KeePass vault.
 
-These libraries are portable Java dependencies except for JNA's platform access to the Windows agent pipe. SSH agent availability depends on the operating system configuration. The app currently accepts OpenSSH-format attached private keys. External private key file formats are handled by SSHJ.
-
-## Security and current limits
-
-The vault is checked for external file changes before each save. A conflicting change is rejected rather than overwritten. Reload the vault to see external edits. The app does not merge simultaneous changes. Decrypted passwords and key bytes are cleared from mutable buffers where practical, but Java cannot guarantee complete memory erasure. Clipboard managers and terminal applications may retain pasted text. Logs must never include credentials.
-
-Terminal tabs support independent connections and PTY resizing. Fedora and other Linux systems use the usual Unix agent socket; Windows uses the OpenSSH agent named pipe. Local OpenSSH server smoke tests verified Ed25519 key attachment and Unix SSH agent authentication through host verification, PTY allocation, and JediTerm startup. Full-screen programs and agent behavior on Windows and macOS still need manual checks. KeePassXC 2.7.12 CLI was used to verify that a vault created by this app and an entry with a binary attachment written to a KeePassXC-created vault can be opened there.
+The master password is kept as a mutable character array only while the vault is unlocked so edits can be saved without another prompt. It is cleared on lock or exit. Java and third-party libraries can create temporary copies, so complete memory erasure cannot be guaranteed. The app does not log credentials.
