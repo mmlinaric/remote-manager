@@ -4,6 +4,7 @@ import com.example.remotemanager.model.AuthenticationType;
 import com.example.remotemanager.model.Connection;
 import com.example.remotemanager.ssh.KnownHostsVerifier;
 import com.example.remotemanager.ssh.SshRemoteSession;
+import com.example.remotemanager.ui.SilkIcons;
 import com.example.remotemanager.ui.settings.AppSettings;
 import com.example.remotemanager.util.SecureClipboard;
 import com.example.remotemanager.vault.Vault;
@@ -16,6 +17,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import javax.swing.Icon;
 import javax.swing.JComponent;
 import javax.swing.JOptionPane;
 import javax.swing.JPasswordField;
@@ -142,7 +144,7 @@ public final class SessionTabs extends JTabbedPane {
     OpenTab tab = new OpenTab(connection, session);
     JComponent component = session.component();
     openTabs.put(component, tab);
-    addTab(connection.name() + " (connecting)", component);
+    addTab(connection.name() + " (connecting)", SilkIcons.CONNECTING, component);
     setSelectedComponent(component);
     worker.execute(
         () -> {
@@ -252,6 +254,13 @@ public final class SessionTabs extends JTabbedPane {
     int index = indexOfComponent(tab.session().component());
     if (index >= 0) {
       setTitleAt(index, tab.connection().name() + " (" + state + ")");
+      Icon icon =
+          switch (state) {
+            case "connected" -> SilkIcons.CONNECTED;
+            case "failed" -> SilkIcons.FAILED;
+            default -> SilkIcons.DISCONNECTED;
+          };
+      setIconAt(index, icon);
     }
   }
 

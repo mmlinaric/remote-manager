@@ -20,8 +20,10 @@ public final class ConnectionDetailsPanel extends JPanel {
     values.add(host);
     values.add(user);
     values.add(port);
-    add(new JLabel("Configuration"), BorderLayout.NORTH);
-    add(values, BorderLayout.CENTER);
+    JPanel summary = new JPanel(new BorderLayout());
+    summary.add(new JLabel("Configuration"), BorderLayout.NORTH);
+    summary.add(values, BorderLayout.CENTER);
+    add(summary, BorderLayout.NORTH);
     showConnection(null);
   }
 
