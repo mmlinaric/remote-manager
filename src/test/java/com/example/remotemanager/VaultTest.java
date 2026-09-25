@@ -3,9 +3,14 @@ package com.example.remotemanager;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.example.remotemanager.vault.kdbx.KdbxVault;
+import com.example.remotemanager.model.AuthenticationType;
+import com.example.remotemanager.model.Connection;
+import com.example.remotemanager.model.ConnectionFolder;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -56,5 +61,117 @@ class VaultTest {
         com.example.remotemanager.vault.VaultException.class,
         () -> vault.addEntry("SSH", "alice", null, Map.of("Password", "wrong"), null, null));
     assertTrue(vault.entries().isEmpty());
+  }
+
+  @Test
+  void storesHostsAndFoldersInsideVaultAndKeepsIdentitiesSeparate() throws Exception {
+    Path file = temp.resolve("hosts.kdbx");
+    char[] master = "master".toCharArray();
+    KdbxVault.create(file, master);
+    KdbxVault vault = new KdbxVault(file);
+    vault.unlock(master);
+    UUID identity = vault.addEntry("SSH password", "alice", "secret".toCharArray(),
+        Map.of(), null, null);
+    ConnectionFolder folder = new ConnectionFolder(UUID.randomUUID(), null, "Production", 0);
+    vault.putFolder(folder);
+    Connection host = new Connection(UUID.randomUUID(), "Web", "web.example.org", 2222,
+        "alice", folder.id(), AuthenticationType.PASSWORD, identity, null, null, null,
+        "Important host", 0);
+    vault.putConnection(host);
+    Connection agentHost = new Connection(UUID.randomUUID(), "Agent", "agent.example.org", 22,
+        "alice", null, AuthenticationType.SSH_AGENT, null, null, null, null, "", 0);
+    vault.putConnection(agentHost);
+    vault.save();
+    assertEquals(1, vault.entries().size());
+    assertTrue(vault.connections().contains(host));
+    assertTrue(vault.connections().contains(agentHost));
+    vault.lock();
+    assertThrows(com.example.remotemanager.vault.VaultException.class, vault::connections);
+
+    vault.unlock(master);
+    assertEquals(List.of(folder), vault.folders());
+    assertTrue(vault.connections().contains(host));
+    assertEquals(identity, vault.entries().getFirst().id());
+
+    Connection moved = new Connection(host.id(), "Web renamed", host.hostname(), host.port(),
+        host.username(), null, host.authenticationType(), identity, null, null, null,
+        host.notes(), 0);
+    vault.putConnection(moved);
+    vault.deleteFolder(folder.id());
+    vault.save();
+    vault.lock(); vault.unlock(master);
+    assertTrue(vault.folders().isEmpty());
+    assertTrue(vault.connections().contains(moved));
+    assertTrue(vault.connections().contains(agentHost));
+    assertThrows(com.example.remotemanager.vault.VaultException.class,
+        () -> vault.deleteIdentity(identity));
+  }
+
+  @Test
+  void hostPasswordsStayPrivateAndFollowTheirHost() throws Exception {
+    Path file = temp.resolve("host-passwords.kdbx");
+    char[] master = "master".toCharArray();
+    KdbxVault.create(file, master);
+    KdbxVault vault = new KdbxVault(file);
+    vault.unlock(master);
+    UUID firstPassword = UUID.randomUUID(), firstSudo = UUID.randomUUID();
+    UUID secondPassword = UUID.randomUUID();
+    Connection first = new Connection(UUID.randomUUID(), "First", "first.example", 22,
+        "alice", null, AuthenticationType.PASSWORD, firstPassword, firstSudo,
+        null, null, "", 0);
+    Connection second = new Connection(UUID.randomUUID(), "Second", "second.example", 22,
+        "bob", null, AuthenticationType.PASSWORD, secondPassword, null,
+        null, null, "", 0);
+    vault.putHostSecret(firstPassword, first.id(), "ssh", "First SSH password", "alice",
+        "first-secret".toCharArray());
+    vault.putHostSecret(firstSudo, first.id(), "sudo", "First sudo password", "alice",
+        "sudo-secret".toCharArray());
+    vault.putHostSecret(secondPassword, second.id(), "ssh", "Second SSH password", "bob",
+        "second-secret".toCharArray());
+    vault.putConnection(first);
+    vault.putConnection(second);
+    vault.save(); vault.lock(); vault.unlock(master);
+
+    assertTrue(vault.entries().isEmpty());
+    assertEquals(3, vault.credentialEntries().size());
+    assertTrue(KdbxVault.isHostSecret(vault.getEntry(firstPassword).orElseThrow(), first.id(), "ssh"));
+    assertArrayEquals("first-secret".toCharArray(), vault.getPassword(firstPassword).orElseThrow());
+    assertArrayEquals("sudo-secret".toCharArray(), vault.getPassword(firstSudo).orElseThrow());
+    assertArrayEquals("second-secret".toCharArray(), vault.getPassword(secondPassword).orElseThrow());
+
+    vault.putHostSecret(firstPassword, first.id(), "ssh", "Renamed", "alice", null);
+    assertArrayEquals("first-secret".toCharArray(), vault.getPassword(firstPassword).orElseThrow());
+    assertThrows(com.example.remotemanager.vault.VaultException.class,
+        () -> vault.putHostSecret(firstPassword, second.id(), "ssh", "Wrong", "bob", null));
+    Connection switched = new Connection(first.id(), first.name(), first.hostname(), first.port(),
+        first.username(), null, AuthenticationType.SSH_AGENT, null, firstSudo,
+        null, null, "", 0);
+    vault.putConnection(switched);
+    assertTrue(vault.getEntry(firstPassword).isEmpty());
+    assertArrayEquals("sudo-secret".toCharArray(), vault.getPassword(firstSudo).orElseThrow());
+    vault.deleteConnection(first.id());
+    assertTrue(vault.getEntry(firstPassword).isEmpty());
+    assertTrue(vault.getEntry(firstSudo).isEmpty());
+    assertArrayEquals("second-secret".toCharArray(), vault.getPassword(secondPassword).orElseThrow());
+    vault.save(); vault.lock(); vault.unlock(master);
+    assertEquals(List.of(second), vault.connections());
+  }
+
+  @Test
+  void rejectedExternalConflictDoesNotLeaveAnUnsavedHostVisible() throws Exception {
+    Path file = temp.resolve("conflict.kdbx");
+    char[] master = "master".toCharArray();
+    KdbxVault.create(file, master);
+    KdbxVault local = new KdbxVault(file);
+    KdbxVault external = new KdbxVault(file);
+    local.unlock(master); external.unlock(master);
+    external.addEntry("Changed externally", "alice", "secret".toCharArray(), Map.of(), null, null);
+    external.save();
+    local.putConnection(new Connection(UUID.randomUUID(), "Unsaved", "localhost", 22,
+        "alice", null, AuthenticationType.SSH_AGENT, null, null, null, null, "", 0));
+    assertThrows(com.example.remotemanager.vault.VaultConflictException.class, local::save);
+    local.recoverAfterFailedSave();
+    assertTrue(local.connections().isEmpty());
+    assertEquals("Changed externally", local.entries().getFirst().title());
   }
 }
