@@ -2,7 +2,10 @@ package com.example.remotemanager.ui.connections;
 
 import com.example.remotemanager.model.Connection;
 import com.example.remotemanager.model.ConnectionFolder;
+import com.example.remotemanager.ui.SilkIcons;
 import java.awt.BorderLayout;
+import java.awt.Component;
+import java.awt.Rectangle;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
@@ -10,11 +13,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Consumer;
+import javax.swing.Icon;
 import javax.swing.JLabel;
+import javax.swing.JMenuItem;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JTree;
+import javax.swing.SwingUtilities;
+import javax.swing.tree.DefaultTreeCellRenderer;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
@@ -29,10 +36,31 @@ public final class ConnectionTreePanel extends JPanel {
   private String selectedId = "";
   private boolean loaded;
 
-  public ConnectionTreePanel(Consumer<Connection> openConnection) {
+  public ConnectionTreePanel(Actions actions) {
     super(new BorderLayout());
     add(new JLabel("Connections"), BorderLayout.NORTH);
     add(new JScrollPane(tree), BorderLayout.CENTER);
+    tree.setCellRenderer(
+        new DefaultTreeCellRenderer() {
+          @Override
+          public Component getTreeCellRendererComponent(
+              JTree tree,
+              Object value,
+              boolean selected,
+              boolean expanded,
+              boolean leaf,
+              int row,
+              boolean hasFocus) {
+            super.getTreeCellRendererComponent(
+                tree, value, selected, expanded, leaf, row, hasFocus);
+            Object item = value instanceof DefaultMutableTreeNode node ? node.getUserObject() : value;
+            setIcon(
+                item instanceof Connection
+                    ? SilkIcons.CONNECTION
+                    : item instanceof ConnectionFolder ? SilkIcons.FOLDER : SilkIcons.ROOT);
+            return this;
+          }
+        });
     tree.addTreeSelectionListener(
         event ->
             details.showConnection(
@@ -40,16 +68,81 @@ public final class ConnectionTreePanel extends JPanel {
     tree.addMouseListener(
         new MouseAdapter() {
           @Override
+          public void mousePressed(MouseEvent event) {
+            showPopup(event);
+          }
+
+          @Override
+          public void mouseReleased(MouseEvent event) {
+            showPopup(event);
+          }
+
+          @Override
           public void mouseClicked(MouseEvent event) {
-            if (event.getClickCount() == 2 && selectedValue() instanceof Connection connection) {
-              openConnection.accept(connection);
+            if (SwingUtilities.isLeftMouseButton(event) && event.getClickCount() == 2) {
+              TreePath path = tree.getPathForLocation(event.getX(), event.getY());
+              if (path != null
+                  && ((DefaultMutableTreeNode) path.getLastPathComponent()).getUserObject()
+                      instanceof Connection connection) {
+                actions.open(connection);
+              }
             }
+          }
+
+          private void showPopup(MouseEvent event) {
+            if (!event.isPopupTrigger()) {
+              return;
+            }
+            TreePath path = tree.getClosestPathForLocation(event.getX(), event.getY());
+            Rectangle bounds = path == null ? null : tree.getPathBounds(path);
+            if (bounds == null
+                || event.getY() < bounds.y
+                || event.getY() >= bounds.y + bounds.height) {
+              return;
+            }
+            Object item = ((DefaultMutableTreeNode) path.getLastPathComponent()).getUserObject();
+            JPopupMenu popup = new JPopupMenu();
+            if (item instanceof ConnectionFolder folder) {
+              popup.add(item("New subfolder", SilkIcons.NEW_FOLDER, () -> actions.newFolder(folder)));
+              popup.add(
+                  item("New connection", SilkIcons.NEW_CONNECTION, () -> actions.newConnection(folder)));
+              popup.addSeparator();
+              popup.add(item("Rename", SilkIcons.EDIT, () -> actions.rename(folder)));
+              popup.add(item("Delete", SilkIcons.DELETE, () -> actions.deleteFolder(folder)));
+            } else if (item instanceof Connection connection) {
+              popup.add(item("Open", SilkIcons.CONNECT, () -> actions.open(connection)));
+              popup.add(item("Edit", SilkIcons.EDIT, () -> actions.edit(connection)));
+              popup.addSeparator();
+              popup.add(item("Delete", SilkIcons.DELETE, () -> actions.deleteConnection(connection)));
+            } else {
+              return;
+            }
+            tree.setSelectionPath(path);
+            popup.show(tree, event.getX(), event.getY());
           }
         });
   }
 
+  private static JMenuItem item(String title, Icon icon, Runnable action) {
+    JMenuItem item = new JMenuItem(title, icon);
+    item.addActionListener(event -> action.run());
+    return item;
+  }
+
   public ConnectionDetailsPanel details() {
     return details;
+  }
+
+  public void expandAll() {
+    for (int row = 0; row < tree.getRowCount(); row++) {
+      tree.expandRow(row);
+    }
+  }
+
+  public void collapseAll() {
+    for (int row = tree.getRowCount() - 1; row > 0; row--) {
+      tree.collapseRow(row);
+    }
   }
 
   public List<ConnectionFolder> folders() {
@@ -112,6 +205,28 @@ public final class ConnectionTreePanel extends JPanel {
     return "";
   }
 
+  public void reveal(UUID id) {
+    if (!(tree.getModel().getRoot() instanceof DefaultMutableTreeNode root)) {
+      return;
+    }
+    var nodes = root.depthFirstEnumeration();
+    while (nodes.hasMoreElements()) {
+      DefaultMutableTreeNode node = (DefaultMutableTreeNode) nodes.nextElement();
+      Object value = node.getUserObject();
+      UUID nodeId =
+          value instanceof ConnectionFolder folder
+              ? folder.id()
+              : value instanceof Connection connection ? connection.id() : null;
+      if (id.equals(nodeId)) {
+        TreePath path = new TreePath(node.getPath());
+        tree.expandPath(path.getParentPath());
+        tree.setSelectionPath(path);
+        tree.scrollPathToVisible(path);
+        return;
+      }
+    }
+  }
+
   private DefaultTreeModel buildTree() {
     DefaultMutableTreeNode root = new DefaultMutableTreeNode("Connections");
     Map<UUID, DefaultMutableTreeNode> nodes = new HashMap<>();
@@ -151,5 +266,21 @@ public final class ConnectionTreePanel extends JPanel {
         tree.setSelectionPath(new TreePath(node.getPath()));
       }
     }
+  }
+
+  public interface Actions {
+    void open(Connection connection);
+
+    void edit(Connection connection);
+
+    void newFolder(ConnectionFolder parent);
+
+    void newConnection(ConnectionFolder parent);
+
+    void rename(ConnectionFolder folder);
+
+    void deleteFolder(ConnectionFolder folder);
+
+    void deleteConnection(Connection connection);
   }
 }

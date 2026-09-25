@@ -44,6 +44,9 @@ class PersistenceTest {
     repo.save(item);
     assertEquals(item, repo.connections().getFirst());
     assertEquals(folderId, repo.folders().getFirst().id());
+    repo.save(new ConnectionFolder(folderId, null, "Renamed homelab", 0));
+    assertEquals("Renamed homelab", repo.folders().getFirst().name());
+    assertEquals(folderId, repo.connections().getFirst().parentFolderId());
     assertThrows(SQLException.class, () -> repo.deleteFolder(folderId));
   }
 }
