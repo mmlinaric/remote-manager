@@ -2,6 +2,8 @@
 
 A compact Java 25 desktop SSH connection manager built with Swing. It stores connection metadata in SQLite and credentials in a normal KDBX4 KeePass database.
 
+Interface icons are from the FamFamFam Silk set; see [third-party notices](src/main/resources/THIRD_PARTY_NOTICES.md) for attribution and license details. The notice is included in the application JAR.
+
 ## Build and run
 
 Install Java 25. The Maven Wrapper downloads Maven if it is not installed locally.
@@ -19,7 +21,7 @@ On Windows, use `mvnw.cmd`. The app uses the system Swing look and feel. Java an
 
 The SQLite database holds folders, connection names, hosts, usernames, authentication choices, KeePass entry UUID references, and UI settings. It contains no passwords or private keys. Its schema is created through versioned Flyway migrations in `src/main/resources/db/migration`.
 
-The selected `.kdbx` file holds credentials. It remains a normal KeePass/KeePassXC database that you can open independently. Entries are referenced by their KeePass UUIDs, so you can rename or move them without changing the connection reference. The vault starts locked and prompts for its master password when a credential is needed. The master password is not stored by the app. You can lock or reload the vault from the File menu. Settings offer automatic locking after 5, 15, or 30 minutes, or never.
+The selected `.kdbx` file holds credentials. It remains a normal KeePass/KeePassXC database that you can open independently. Entries are referenced by their KeePass UUIDs, so you can rename or move them without changing the connection reference. On startup the vault is locked; opening it prompts for the master password and shows its entries. The master password is not stored by the app. You can lock or reload the vault from File → Vault. Settings offer automatic locking after 5, 15, or 30 minutes, or never.
 
 For a KeePass private key connection, choose a credential entry and the attachment that contains its OpenSSH private key. The entry password may hold the key passphrase. The key is parsed from memory for authentication. Password authentication also uses a KeePass entry. A private key file may be selected instead. SSH agent authentication uses the agent socket on Unix systems or the OpenSSH named pipe on Windows. The agent supplies signatures, so its private key is not copied into the app.
 
