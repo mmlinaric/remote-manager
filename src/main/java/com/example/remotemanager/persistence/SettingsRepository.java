@@ -1,34 +1,44 @@
 package com.example.remotemanager.persistence;
 
-import java.sql.SQLException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.util.Optional;
+import java.util.Properties;
 
+/** Local non-secret preferences. Vault contents never enter this file. */
 public final class SettingsRepository {
-  private final Database database;
+  private final Path file;
+  private final Properties values = new Properties();
 
-  public SettingsRepository(Database database) {
-    this.database = database;
+  public SettingsRepository(Path file) throws IOException {
+    this.file = file;
+    if (Files.exists(file)) {
+      try (InputStream input = Files.newInputStream(file)) { values.load(input); }
+    }
   }
 
-  public Optional<String> get(String key) throws SQLException {
-    try (var db = database.open();
-        var query = db.prepareStatement("SELECT value FROM application_setting WHERE key=?")) {
-      query.setString(1, key);
-      try (var rows = query.executeQuery()) {
-        return rows.next() ? Optional.of(rows.getString(1)) : Optional.empty();
+  public synchronized Optional<String> get(String key) {
+    return Optional.ofNullable(values.getProperty(key));
+  }
+
+  public synchronized void put(String key, String value) throws IOException {
+    values.setProperty(key, value);
+    Files.createDirectories(file.toAbsolutePath().getParent());
+    Path temporary = Files.createTempFile(file.toAbsolutePath().getParent(), ".settings-", ".tmp");
+    try {
+      try (OutputStream output = Files.newOutputStream(temporary)) {
+        values.store(output, "Remote Manager preferences (no credentials)");
       }
-    }
-  }
-
-  public void put(String key, String value) throws SQLException {
-    try (var db = database.open();
-        var query =
-            db.prepareStatement(
-                "INSERT INTO application_setting(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE"
-                    + " SET value=excluded.value")) {
-      query.setString(1, key);
-      query.setString(2, value);
-      query.executeUpdate();
-    }
+      try {
+        Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+      } catch (AtomicMoveNotSupportedException unsupported) {
+        Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING);
+      }
+    } finally { Files.deleteIfExists(temporary); }
   }
 }

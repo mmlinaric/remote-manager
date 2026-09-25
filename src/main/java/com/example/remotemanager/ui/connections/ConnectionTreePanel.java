@@ -3,8 +3,11 @@ package com.example.remotemanager.ui.connections;
 import com.example.remotemanager.model.Connection;
 import com.example.remotemanager.model.ConnectionFolder;
 import com.example.remotemanager.ui.SilkIcons;
+import com.example.remotemanager.model.AuthenticationType;
+import com.example.remotemanager.vault.VaultEntry;
 import java.awt.BorderLayout;
 import java.awt.Component;
+import java.awt.KeyboardFocusManager;
 import java.awt.Rectangle;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -29,17 +32,21 @@ import javax.swing.tree.TreePath;
 /** Displays folders and connections while retaining selection across reloads. */
 public final class ConnectionTreePanel extends JPanel {
   private final JTree tree = new JTree(new DefaultMutableTreeNode("Connections"));
+  private final JLabel emptyHint = new JLabel("  No hosts yet. Use New host in the toolbar.");
   private final ConnectionDetailsPanel details = new ConnectionDetailsPanel();
   private List<ConnectionFolder> folders = List.of();
   private List<Connection> connections = List.of();
+  private Map<UUID, VaultEntry> identities = Map.of();
   private String expandedIds = "";
   private String selectedId = "";
   private boolean loaded;
+  private Runnable selectionChanged = () -> {};
 
   public ConnectionTreePanel(Actions actions) {
     super(new BorderLayout());
     add(new JLabel("Connections"), BorderLayout.NORTH);
     add(new JScrollPane(tree), BorderLayout.CENTER);
+    add(emptyHint, BorderLayout.SOUTH);
     tree.setCellRenderer(
         new DefaultTreeCellRenderer() {
           @Override
@@ -55,16 +62,20 @@ public final class ConnectionTreePanel extends JPanel {
                 tree, value, selected, expanded, leaf, row, hasFocus);
             Object item = value instanceof DefaultMutableTreeNode node ? node.getUserObject() : value;
             setIcon(
-                item instanceof Connection
-                    ? SilkIcons.CONNECTION
+                item instanceof Connection connection
+                    ? issue(connection) == null ? SilkIcons.CONNECTION : SilkIcons.FAILED
                     : item instanceof ConnectionFolder ? SilkIcons.FOLDER : SilkIcons.ROOT);
+            if (item instanceof Connection connection && issue(connection) != null)
+              setText(connection.name() + " — " + issue(connection));
             return this;
           }
         });
-    tree.addTreeSelectionListener(
-        event ->
-            details.showConnection(
-                selectedValue() instanceof Connection connection ? connection : null));
+    tree.addTreeSelectionListener(event -> {
+      if (selectedValue() instanceof Connection connection)
+        details.showConnection(connection, issue(connection));
+      else details.showConnection(null);
+      selectionChanged.run();
+    });
     tree.addMouseListener(
         new MouseAdapter() {
           @Override
@@ -111,6 +122,10 @@ public final class ConnectionTreePanel extends JPanel {
               popup.add(item("Delete", SilkIcons.DELETE, () -> actions.deleteFolder(folder)));
             } else if (item instanceof Connection connection) {
               popup.add(item("Open", SilkIcons.CONNECT, () -> actions.open(connection)));
+              JMenuItem copySudo = item("Copy sudo password", SilkIcons.COPY_PASSWORD,
+                  () -> actions.copySudoPassword(connection));
+              copySudo.setEnabled(hasSudoPassword(connection));
+              popup.add(copySudo);
               popup.add(item("Edit", SilkIcons.EDIT, () -> actions.edit(connection)));
               popup.addSeparator();
               popup.add(item("Delete", SilkIcons.DELETE, () -> actions.deleteConnection(connection)));
@@ -133,6 +148,8 @@ public final class ConnectionTreePanel extends JPanel {
     return details;
   }
 
+  public void onSelectionChanged(Runnable action) { selectionChanged = action; }
+
   public void expandAll() {
     for (int row = 0; row < tree.getRowCount(); row++) {
       tree.expandRow(row);
@@ -151,6 +168,42 @@ public final class ConnectionTreePanel extends JPanel {
 
   public List<Connection> connections() {
     return connections;
+  }
+
+  public void setIdentities(List<VaultEntry> entries) {
+    identities = entries.stream().collect(java.util.stream.Collectors.toMap(VaultEntry::id, entry -> entry));
+    tree.repaint();
+    if (selectedValue() instanceof Connection connection)
+      details.showConnection(connection, issue(connection));
+  }
+
+  public String issue(Connection connection) {
+    if (connection.sshCredentialEntryId() != null) {
+      VaultEntry identity = identities.get(connection.sshCredentialEntryId());
+      if (identity == null) return "identity missing";
+      if (connection.authenticationType() == AuthenticationType.PASSWORD && !identity.hasPassword())
+        return "SSH password missing";
+      if (connection.authenticationType() == AuthenticationType.KDBX_PRIVATE_KEY
+          && !identity.attachments().contains(connection.privateKeyAttachmentName()))
+        return "private key missing";
+    }
+    if (connection.sudoCredentialEntryId() != null) {
+      VaultEntry sudo = identities.get(connection.sudoCredentialEntryId());
+      if (sudo == null) return "sudo identity missing";
+      if (!sudo.hasPassword()) return "sudo password missing";
+    }
+    return null;
+  }
+
+  public boolean hasSudoPassword(Connection connection) {
+    if (connection == null || connection.sudoCredentialEntryId() == null) return false;
+    VaultEntry identity = identities.get(connection.sudoCredentialEntryId());
+    return identity != null && identity.hasPassword();
+  }
+
+  public boolean isTreeFocused() {
+    Component focus = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+    return focus != null && SwingUtilities.isDescendingFrom(focus, tree);
   }
 
   public Object selectedValue() {
@@ -172,6 +225,7 @@ public final class ConnectionTreePanel extends JPanel {
     }
     this.folders = folders;
     this.connections = connections;
+    emptyHint.setVisible(connections.isEmpty());
     tree.setModel(buildTree());
     restoreState();
     loaded = true;
@@ -270,6 +324,8 @@ public final class ConnectionTreePanel extends JPanel {
 
   public interface Actions {
     void open(Connection connection);
+
+    void copySudoPassword(Connection connection);
 
     void edit(Connection connection);
 

@@ -22,6 +22,14 @@ public final class SettingsDialog {
     JSpinner scrollback = spinner(current.scrollbackLines(), 100, 100000);
     JSpinner clipboard = spinner(current.clipboardSeconds(), 5, 600);
     JComboBox<Integer> autoLock = new JComboBox<>(new Integer[] {0, 5, 15, 30});
+    autoLock.setRenderer(new javax.swing.DefaultListCellRenderer() {
+      @Override public java.awt.Component getListCellRendererComponent(javax.swing.JList<?> list,
+          Object value, int index, boolean selected, boolean focused) {
+        String label = value instanceof Integer minutes && minutes == 0
+            ? "Never" : value + " minutes";
+        return super.getListCellRendererComponent(list, label, index, selected, focused);
+      }
+    });
     autoLock.setSelectedItem(current.vaultAutoLockMinutes());
     JTextField knownHosts = new JTextField(current.knownHosts().toString(), 24);
 
@@ -30,7 +38,7 @@ public final class SettingsDialog {
     addRow(form, 1, "Font size", fontSize);
     addRow(form, 2, "Scrollback lines", scrollback);
     addRow(form, 3, "Sudo clipboard seconds", clipboard);
-    addRow(form, 4, "Vault auto lock minutes", autoLock);
+    addRow(form, 4, "Lock after inactivity", autoLock);
     addRow(form, 5, "Known hosts file", knownHosts);
 
     if (JOptionPane.showConfirmDialog(

@@ -12,14 +12,18 @@ public final class ConnectionDetailsPanel extends JPanel {
   private final JLabel host = new JLabel();
   private final JLabel user = new JLabel();
   private final JLabel port = new JLabel();
+  private final JLabel authentication = new JLabel();
+  private final JLabel credential = new JLabel();
 
   public ConnectionDetailsPanel() {
     super(new BorderLayout());
-    JPanel values = new JPanel(new GridLayout(4, 1, 0, 2));
+    JPanel values = new JPanel(new GridLayout(6, 1, 0, 2));
     values.add(name);
     values.add(host);
     values.add(user);
     values.add(port);
+    values.add(authentication);
+    values.add(credential);
     JPanel summary = new JPanel(new BorderLayout());
     summary.add(new JLabel("Configuration"), BorderLayout.NORTH);
     summary.add(values, BorderLayout.CENTER);
@@ -28,10 +32,17 @@ public final class ConnectionDetailsPanel extends JPanel {
   }
 
   public void showConnection(Connection connection) {
+    showConnection(connection, null);
+  }
+
+  public void showConnection(Connection connection, String issue) {
     name.setText("Name: " + value(connection == null ? null : connection.name()));
     host.setText("Host: " + value(connection == null ? null : connection.hostname()));
     user.setText("User: " + value(connection == null ? null : connection.username()));
     port.setText("Port: " + (connection == null ? "" : connection.port()));
+    authentication.setText("Authentication: " + (connection == null ? "" : connection.authenticationType()));
+    credential.setText("Credential: " + (connection == null ? "" : issue != null ? issue
+        : connection.sshCredentialEntryId() == null ? "No vault identity needed" : "Ready"));
   }
 
   private static String value(String text) {

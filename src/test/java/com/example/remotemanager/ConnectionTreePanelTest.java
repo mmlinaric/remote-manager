@@ -6,8 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.example.remotemanager.model.Connection;
 import com.example.remotemanager.model.ConnectionFolder;
+import com.example.remotemanager.model.AuthenticationType;
 import com.example.remotemanager.ui.connections.ConnectionTreePanel;
+import com.example.remotemanager.vault.VaultEntry;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import javax.swing.SwingUtilities;
 import org.junit.jupiter.api.Test;
@@ -35,9 +38,31 @@ class ConnectionTreePanelTest {
         });
   }
 
+  @Test
+  void sudoCopyAvailabilityDoesNotDependOnSshIdentity() throws Exception {
+    SwingUtilities.invokeAndWait(() -> {
+      ConnectionTreePanel panel = new ConnectionTreePanel(new NoopActions());
+      UUID sudoId = UUID.randomUUID();
+      Connection host = new Connection(UUID.randomUUID(), "Server", "server.example", 22,
+          "admin", null, AuthenticationType.PASSWORD, UUID.randomUUID(), sudoId,
+          null, null, "", 0);
+      assertFalse(panel.hasSudoPassword(host));
+      panel.setIdentities(List.of(new VaultEntry(sudoId, "Sudo", "admin", Map.of(),
+          List.of(), false)));
+      assertFalse(panel.hasSudoPassword(host));
+      panel.setIdentities(List.of(new VaultEntry(sudoId, "Sudo", "admin", Map.of(),
+          List.of(), true)));
+      assertEquals("identity missing", panel.issue(host));
+      assertTrue(panel.hasSudoPassword(host));
+    });
+  }
+
   private static final class NoopActions implements ConnectionTreePanel.Actions {
     @Override
     public void open(Connection connection) {}
+
+    @Override
+    public void copySudoPassword(Connection connection) {}
 
     @Override
     public void edit(Connection connection) {}

@@ -2,7 +2,6 @@ package com.example.remotemanager.ui.main;
 
 import com.example.remotemanager.model.Connection;
 import com.example.remotemanager.model.ConnectionFolder;
-import com.example.remotemanager.persistence.ConnectionRepository;
 import com.example.remotemanager.persistence.SettingsRepository;
 import com.example.remotemanager.ui.SilkIcons;
 import com.example.remotemanager.ui.connections.ConnectionEditor;
@@ -10,703 +9,743 @@ import com.example.remotemanager.ui.connections.ConnectionTreePanel;
 import com.example.remotemanager.ui.settings.AppSettings;
 import com.example.remotemanager.ui.settings.SettingsDialog;
 import com.example.remotemanager.ui.terminal.SessionTabs;
-import com.example.remotemanager.ui.vault.VaultBrowserDialog;
+import com.example.remotemanager.ui.vault.IdentityEditor;
 import com.example.remotemanager.vault.VaultEntry;
 import com.example.remotemanager.vault.kdbx.KdbxVault;
+import java.awt.AWTEvent;
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FileDialog;
+import java.awt.Frame;
+import java.awt.FlowLayout;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
+import java.awt.event.ActionEvent;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
+import java.awt.event.InputEvent;
+import java.awt.event.KeyEvent;
+import java.awt.Toolkit;
+import java.awt.Window;
+import java.awt.event.AWTEventListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.SQLException;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import javax.swing.BorderFactory;
+import javax.swing.AbstractButton;
+import javax.swing.AbstractAction;
+import javax.swing.DefaultListCellRenderer;
 import javax.swing.JButton;
-import javax.swing.Icon;
+import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JList;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
+import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
+import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
 import javax.swing.JToolBar;
+import javax.swing.JComponent;
+import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 
+/** Vault-first desktop workspace. All host and identity data comes from the unlocked KDBX file. */
 public final class MainWindow extends JFrame {
-  private final ConnectionRepository connections;
   private final SettingsRepository settings;
-  private final JLabel status = new JLabel("Ready");
-  private final JTextField quickConnect = new JTextField(24);
-  private AppSettings preferences = AppSettings.defaults();
-  private volatile long lastVaultUse = System.nanoTime();
+  private final ExecutorService vaultWorker = Executors.newSingleThreadExecutor();
+  private final JPanel cards = new JPanel(new CardLayout());
+  private final JLabel vaultPath = new JLabel("No vault selected");
+  private final JLabel status = new JLabel("Open or create a vault to begin.");
+  private final JLabel vaultState = new JLabel("Vault locked  |  0 sessions");
+  private final JTextField quickConnect = new JTextField(20);
+  private final JList<VaultEntry> identities = new JList<>();
+  private final JLabel identityHint = new JLabel("  No identities yet. Create one here or while adding a host.");
+  private final List<AbstractButton> vaultActions = new ArrayList<>();
+  private final List<AbstractButton> hostActions = new ArrayList<>();
+  private final List<AbstractButton> identityActions = new ArrayList<>();
+  private final List<AbstractButton> sessionActions = new ArrayList<>();
+  private JMenuItem unlockMenuItem;
+  private JMenuItem connectSelectedItem;
+  private JMenuItem copySudoSessionItem;
+  private JButton copySudoButton;
+  private JButton unlockWelcomeButton;
   private KdbxVault vault;
-  private long vaultOperationVersion;
-  private final SessionTabs tabs =
-      new SessionTabs(() -> vault, this::unlockVaultAsync, this::showStatus, () -> preferences);
-  private final ConnectionTreePanel connectionTree =
-      new ConnectionTreePanel(
-          new ConnectionTreePanel.Actions() {
-            @Override
-            public void open(Connection connection) {
-              tabs.open(connection);
-            }
+  private AppSettings preferences;
+  private final SessionTabs tabs = new SessionTabs(() -> vault, this::sessionReady,
+      this::showStatus, () -> preferences);
+  private final ConnectionTreePanel connectionTree = new ConnectionTreePanel(new TreeActions());
+  private final JSplitPane workspace;
+  private final int initialSidebarWidth;
+  private final Timer autoLock = new Timer(15000, event -> checkAutoLock());
+  private final AWTEventListener activityListener = this::recordActivity;
+  private boolean locked = true;
+  private boolean sidebarWidthInitialized;
+  private long operationVersion;
+  private long lastActivity = System.nanoTime();
 
-            @Override
-            public void edit(Connection connection) {
-              editConnection(connection);
-            }
-
-            @Override
-            public void newFolder(ConnectionFolder parent) {
-              MainWindow.this.newFolder(parent);
-            }
-
-            @Override
-            public void newConnection(ConnectionFolder parent) {
-              editConnection(null, parent.id());
-            }
-
-            @Override
-            public void rename(ConnectionFolder folder) {
-              renameFolder(folder);
-            }
-
-            @Override
-            public void deleteFolder(ConnectionFolder folder) {
-              deleteItem(folder);
-            }
-
-            @Override
-            public void deleteConnection(Connection connection) {
-              deleteItem(connection);
-            }
-          });
-  private final JSplitPane split = createContent();
-  private final Timer autoLockTimer = new Timer(15000, event -> autoLockVault());
-
-  public MainWindow(ConnectionRepository connections, SettingsRepository settings) {
+  public MainWindow(SettingsRepository settings) {
     super("Remote Manager");
-    this.connections = connections;
     this.settings = settings;
-
-    setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-    setMinimumSize(new Dimension(760, 480));
-    setSize(1100, 700);
-    setJMenuBar(createMenu());
-    add(createToolbar(), BorderLayout.NORTH);
-    add(split, BorderLayout.CENTER);
-    add(status, BorderLayout.SOUTH);
-
-    addWindowListener(
-        new WindowAdapter() {
-          @Override
-          public void windowClosing(WindowEvent event) {
-            closeWindow();
-          }
-        });
-
-    autoLockTimer.start();
-    loadSettings();
+    this.preferences = AppSettings.load(settings);
+    int savedSidebarWidth = number("window.divider", 320);
+    this.initialSidebarWidth = savedSidebarWidth < 190 ? 320 : savedSidebarWidth;
+    this.workspace = createWorkspace();
+    workspace.addComponentListener(new ComponentAdapter() {
+      @Override public void componentResized(ComponentEvent event) { initializeSidebarWidth(); }
+    });
+    connectionTree.onSelectionChanged(this::updateActions);
+    identities.addListSelectionListener(event -> updateActions());
+    tabs.addChangeListener(event -> { updateActions(); updateVaultState(); });
+    settings.get("vault.path").ifPresent(path -> vault = new KdbxVault(Path.of(path)));
+    setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
+    setMinimumSize(new Dimension(800, 520));
+    setSize(number("window.width", 1120), number("window.height", 720));
+    int x = number("window.x", -1), y = number("window.y", -1);
+    if (x >= 0 && y >= 0) setLocation(x, y); else setLocationRelativeTo(null);
+    setExtendedState(Frame.MAXIMIZED_BOTH);
+    setJMenuBar(menu());
+    installSudoShortcut();
+    cards.add(welcome(), "locked");
+    cards.add(workspacePanel(), "workspace");
+    add(cards, BorderLayout.CENTER);
+    JPanel statusBar = new JPanel(new BorderLayout(12, 0));
+    statusBar.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
+    statusBar.add(status, BorderLayout.CENTER);
+    statusBar.add(vaultState, BorderLayout.EAST);
+    add(statusBar, BorderLayout.SOUTH);
+    showLocked();
+    addWindowListener(new WindowAdapter() {
+      @Override public void windowClosing(WindowEvent event) { closeWindow(); }
+    });
+    Toolkit.getDefaultToolkit().addAWTEventListener(activityListener,
+        AWTEvent.KEY_EVENT_MASK | AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK);
+    autoLock.start();
   }
 
-  @Override
-  public void dispose() {
-    vaultOperationVersion++;
-    autoLockTimer.stop();
-    tabs.shutdown();
-    if (vault != null) {
-      vault.lock();
-    }
-    super.dispose();
+  private JPanel welcome() {
+    JPanel outer = new JPanel(new GridBagLayout());
+    JPanel content = new JPanel(new GridBagLayout());
+    content.setBorder(BorderFactory.createCompoundBorder(
+        BorderFactory.createTitledBorder("KeePass vault"), BorderFactory.createEmptyBorder(16, 22, 20, 22)));
+    GridBagConstraints c = new GridBagConstraints();
+    c.gridx = 0; c.gridy = 0; c.gridwidth = 3; c.anchor = GridBagConstraints.WEST;
+    c.insets = new Insets(5, 5, 14, 5);
+    content.add(new JLabel("Unlock your vault to view hosts and identities."), c);
+    c.gridy++; c.insets = new Insets(4, 5, 14, 5);
+    content.add(vaultPath, c);
+    c.gridy++; c.gridwidth = 1; c.insets = new Insets(4, 5, 4, 5);
+    unlockWelcomeButton = new JButton("Unlock", SilkIcons.UNLOCK);
+    unlockWelcomeButton.addActionListener(event -> unlockVault());
+    content.add(unlockWelcomeButton, c);
+    c.gridx++;
+    JButton open = new JButton("Open vault...", SilkIcons.VAULT);
+    open.addActionListener(event -> openVault());
+    content.add(open, c);
+    c.gridx++;
+    JButton create = new JButton("Create vault...", SilkIcons.NEW_CONNECTION);
+    create.addActionListener(event -> createVault());
+    content.add(create, c);
+    outer.add(content);
+    return outer;
   }
 
-  private JMenuBar createMenu() {
-    JMenuBar menuBar = new JMenuBar();
-    JMenu file = menu("File");
-    file.add(item("New folder", SilkIcons.NEW_FOLDER, this::newFolder));
-    file.add(item("New connection", SilkIcons.NEW_CONNECTION, () -> editConnection(null)));
-    file.add(item("Edit selected", SilkIcons.EDIT, this::editSelected));
-    file.add(item("Delete selected", SilkIcons.DELETE, this::deleteSelected));
-    file.addSeparator();
-    JMenu vaultMenu = new JMenu("Vault");
-    vaultMenu.setIcon(SilkIcons.VAULT);
-    vaultMenu.add(item("Open...", SilkIcons.VAULT, this::openVault));
-    vaultMenu.add(item("Create...", SilkIcons.VAULT, this::createVault));
-    vaultMenu.addSeparator();
-    vaultMenu.add(item("Unlock", SilkIcons.UNLOCK, () -> unlockVaultAsync()));
-    vaultMenu.add(item("Lock", SilkIcons.LOCK, this::lockVault));
-    vaultMenu.add(item("Reload", SilkIcons.RECONNECT, this::reloadVault));
-    vaultMenu.addSeparator();
-    vaultMenu.add(item("Browse entries...", SilkIcons.VAULT, this::browseVault));
-    file.add(vaultMenu);
-    JMenu session = menu("Session");
-    session.add(item("Disconnect", SilkIcons.DISCONNECT, tabs::disconnectSelected));
-    session.add(item("Reconnect", SilkIcons.RECONNECT, tabs::reconnectSelected));
-    session.add(item("Close tab", SilkIcons.CLOSE, tabs::closeSelected));
-    session.add(item("Copy sudo password", SilkIcons.COPY_PASSWORD, tabs::copySudoPassword));
-    file.addSeparator();
-    file.add(item("Exit", SilkIcons.EXIT, this::closeWindow));
-    menuBar.add(file);
-    JMenu view = menu("View");
-    view.add(item("Expand all folders", null, connectionTree::expandAll));
-    view.add(item("Collapse all folders", null, connectionTree::collapseAll));
-    view.addSeparator();
-    view.add(item("Refresh connections", SilkIcons.RECONNECT, this::refreshTree));
-    menuBar.add(view);
-    JMenu tools = menu("Tools");
-    tools.add(item("Settings", SilkIcons.SETTINGS, this::editSettings));
-    menuBar.add(tools);
-    menuBar.add(session);
-    JMenu help = menu("Help");
-    help.add(item("About Remote Manager", null, this::showAbout));
-    menuBar.add(help);
-    return menuBar;
-  }
-
-  private void showAbout() {
-    JOptionPane.showMessageDialog(
-        this,
-        "Remote Manager\nA compact SSH connection manager.\n\n"
-            + "Interface icons: FamFamFam Silk by Mark James (CC BY 2.5).\n"
-            + "See THIRD_PARTY_NOTICES.md for details.",
-        "About Remote Manager",
-        JOptionPane.INFORMATION_MESSAGE);
-  }
-
-  private JToolBar createToolbar() {
-    JToolBar toolbar = new JToolBar();
-    toolbar.setFloatable(false);
-    toolbar.add(new JLabel("Connect: "));
+  private JPanel workspacePanel() {
+    JPanel panel = new JPanel(new BorderLayout());
+    JToolBar toolbar = new JToolBar(); toolbar.setFloatable(false);
+    toolbar.add(vaultButton("New host", SilkIcons.NEW_CONNECTION, () -> editHost(null, null)));
+    toolbar.add(vaultButton("New identity", SilkIcons.VAULT, () -> editIdentity(null)));
+    toolbar.addSeparator();
+    toolbar.add(new JLabel("Host: "));
     toolbar.add(quickConnect);
-    JButton connect = new JButton("Connect", SilkIcons.CONNECT);
-    connect.addActionListener(event -> connectFromToolbar());
-    toolbar.add(connect);
-    return toolbar;
+    toolbar.add(vaultButton("Connect", SilkIcons.CONNECT, this::quickConnect));
+    toolbar.addSeparator();
+    toolbar.add(vaultButton("Lock", SilkIcons.LOCK, this::lockVault));
+    panel.add(toolbar, BorderLayout.NORTH);
+    panel.add(workspace, BorderLayout.CENTER);
+    return panel;
   }
 
-  private JSplitPane createContent() {
-    JSplitPane left =
-        new JSplitPane(JSplitPane.VERTICAL_SPLIT, connectionTree, connectionTree.details());
-    left.setResizeWeight(1.0);
-    left.setDividerLocation(420);
-    JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, tabs);
-    split.setDividerLocation(300);
+  private JSplitPane createWorkspace() {
+    JTabbedPane sidebar = new JTabbedPane();
+    sidebar.setMinimumSize(new Dimension(190, 0));
+    JSplitPane hosts = new JSplitPane(JSplitPane.VERTICAL_SPLIT, connectionTree, connectionTree.details());
+    hosts.setResizeWeight(0.8); hosts.setDividerLocation(420);
+    sidebar.addTab("Hosts", SilkIcons.CONNECTION, hosts);
+    JPanel identityPanel = new JPanel(new BorderLayout());
+    identities.setCellRenderer(new DefaultListCellRenderer() {
+      @Override public Component getListCellRendererComponent(JList<?> list, Object value,
+          int index, boolean selected, boolean focused) {
+        VaultEntry entry = (VaultEntry) value;
+        String text = entry == null ? "" : entry.title() +
+            (entry.username() == null || entry.username().isBlank() ? "" : "  (" + entry.username() + ")") +
+            (entry.hasPassword() ? "  [password]" : "") +
+            (entry.attachments().isEmpty() ? "" : "  [key/file]");
+        super.getListCellRendererComponent(list, text, index, selected, focused);
+        setIcon(SilkIcons.VAULT);
+        return this;
+      }
+    });
+    identities.addMouseListener(new java.awt.event.MouseAdapter() {
+      @Override public void mouseClicked(java.awt.event.MouseEvent event) {
+        if (event.getClickCount() == 2 && identities.getSelectedValue() != null)
+          editIdentity(identities.getSelectedValue());
+      }
+    });
+    identityPanel.add(identityHint, BorderLayout.NORTH);
+    identityPanel.add(new JScrollPane(identities), BorderLayout.CENTER);
+    JPanel identityActions = new JPanel(new FlowLayout(FlowLayout.LEFT));
+    identityActions.add(button("New", SilkIcons.NEW_CONNECTION, () -> editIdentity(null)));
+    identityActions.add(selectedIdentityButton("Edit", SilkIcons.EDIT, () -> editIdentity(identities.getSelectedValue())));
+    identityActions.add(selectedIdentityButton("Delete", SilkIcons.DELETE, this::deleteIdentity));
+    identityPanel.add(identityActions, BorderLayout.SOUTH);
+    sidebar.addTab("Identities", SilkIcons.VAULT, identityPanel);
+    JPanel right = new JPanel(new CardLayout());
+    JPanel empty = new JPanel(new GridBagLayout());
+    empty.add(new JLabel("Double-click a host to open an SSH session."));
+    JPanel sessionPanel = new JPanel(new BorderLayout());
+    JPanel sessionActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 2));
+    copySudoButton = button("Copy sudo password", SilkIcons.COPY_PASSWORD, tabs::copySudoPassword);
+    copySudoButton.setToolTipText("Copy the active session's sudo password");
+    sessionActions.add(copySudoButton);
+    sessionPanel.add(sessionActions, BorderLayout.NORTH);
+    sessionPanel.add(tabs, BorderLayout.CENTER);
+    right.add(empty, "empty"); right.add(sessionPanel, "tabs");
+    tabs.addChangeListener(event -> ((CardLayout) right.getLayout()).show(right,
+        tabs.getTabCount() == 0 ? "empty" : "tabs"));
+    JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sidebar, right);
+    right.setMinimumSize(new Dimension(300, 0));
+    split.setContinuousLayout(true);
+    split.setResizeWeight(0);
     return split;
   }
 
-  private void editSettings() {
-    AppSettings edited = SettingsDialog.edit(this, preferences);
-    if (edited == null) {
-      return;
-    }
-    preferences = edited;
-    runDatabaseAction(() -> edited.save(settings));
+  private JMenuBar menu() {
+    JMenuBar bar = new JMenuBar();
+    JMenu file = topMenu("File");
+    file.add(vaultItem("New host", () -> editHost(null, null)));
+    file.add(vaultItem("New folder", () -> newFolder(null)));
+    file.add(vaultItem("New identity", () -> editIdentity(null)));
+    file.addSeparator();
+    file.add(item("Open vault...", this::openVault));
+    file.add(item("Create vault...", this::createVault));
+    unlockMenuItem = item("Unlock vault", this::unlockVault);
+    file.add(unlockMenuItem);
+    file.add(vaultItem("Lock vault", this::lockVault));
+    file.add(vaultItem("Reload vault", this::reloadVault));
+    file.addSeparator(); file.add(item("Exit", this::closeWindow));
+    bar.add(file);
+    JMenu host = topMenu("Host");
+    connectSelectedItem = selectedHostItem("Connect selected", this::connectSelected);
+    host.add(connectSelectedItem);
+    host.add(selectedHostItem("Edit selected", this::editSelectedHost));
+    host.add(selectedHostItem("Delete selected", this::deleteSelectedHost));
+    bar.add(host);
+    JMenu session = topMenu("Session");
+    session.add(selectedSessionItem("Disconnect", tabs::disconnectSelected));
+    session.add(selectedSessionItem("Reconnect", tabs::reconnectSelected));
+    session.add(selectedSessionItem("Close tab", tabs::closeSelected));
+    copySudoSessionItem = selectedSessionItem("Copy sudo password", tabs::copySudoPassword);
+    session.add(copySudoSessionItem);
+    bar.add(session);
+    JMenu tools = topMenu("Tools"); tools.add(item("Settings", this::editSettings)); bar.add(tools);
+    JMenu help = topMenu("Help");
+    help.add(item("About", () -> JOptionPane.showMessageDialog(this,
+        "Remote Manager\nSSH hosts and identities in a KeePass vault.\nIcons: FamFamFam Silk by Mark James (CC BY 2.5).",
+        "About Remote Manager", JOptionPane.INFORMATION_MESSAGE)));
+    bar.add(help);
+    return bar;
   }
 
-  private void autoLockVault() {
-    int minutes = preferences.vaultAutoLockMinutes();
-    if (vault == null || !vault.isUnlocked() || minutes == 0) {
-      return;
-    }
-    long elapsed = System.nanoTime() - lastVaultUse;
-    if (elapsed >= java.util.concurrent.TimeUnit.MINUTES.toNanos(minutes)) {
-      lockVault();
-    }
+  private static JButton button(String title, javax.swing.Icon icon, Runnable action) {
+    JButton button = new JButton(title, icon); button.addActionListener(event -> action.run()); return button;
   }
-
-  private void closeWindow() {
-    int x = getX();
-    int y = getY();
-    int width = getWidth();
-    int height = getHeight();
-    int divider = split.getDividerLocation();
-    String expanded = connectionTree.expandedIds();
-    String selected = connectionTree.selectedId();
-    CompletableFuture.runAsync(
-            () -> {
-              try {
-                settings.put("window.x", Integer.toString(x));
-                settings.put("window.y", Integer.toString(y));
-                settings.put("window.width", Integer.toString(width));
-                settings.put("window.height", Integer.toString(height));
-                settings.put("window.divider", Integer.toString(divider));
-                settings.put("tree.expanded", expanded);
-                settings.put("tree.selected", selected);
-              } catch (SQLException error) {
-                throw new RuntimeException(error);
-              }
-            })
-        .whenComplete(
-            (ignored, error) ->
-                SwingUtilities.invokeLater(
-                    () -> {
-                      if (error != null) {
-                        showError("Could not save window settings", error);
-                      }
-                      dispose();
-                    }));
-  }
-
-  private void refreshTree() {
-    refreshTree(null);
-  }
-
-  private void refreshTree(UUID revealId) {
-    CompletableFuture.supplyAsync(
-            () -> {
-              try {
-                return new TreeData(connections.folders(), connections.connections());
-              } catch (SQLException error) {
-                throw new RuntimeException(error);
-              }
-            })
-        .whenComplete(
-            (data, error) ->
-                SwingUtilities.invokeLater(
-                    () -> {
-                      if (error != null) {
-                        showError("Could not load connections", error);
-                      } else {
-                        connectionTree.showConnections(data.folders(), data.connections());
-                        if (revealId != null) {
-                          connectionTree.reveal(revealId);
-                        }
-                      }
-                    }));
-  }
-
-  private void editSelected() {
-    Object selected = connectionTree.selectedValue();
-    if (selected instanceof Connection connection) {
-      editConnection(connection);
-    } else if (selected instanceof ConnectionFolder folder) {
-      renameFolder(folder);
-    }
-  }
-
-  private void connectFromToolbar() {
-    String target = quickConnect.getText().trim();
-    connectionTree.connections().stream()
-        .filter(
-            connection ->
-                connection.name().equalsIgnoreCase(target)
-                    || connection.hostname().equalsIgnoreCase(target))
-        .findFirst()
-        .ifPresentOrElse(tabs::open, () -> showStatus("No saved connection matches " + target));
-  }
-
-  private void editConnection(Connection current) {
-    UUID parent = current == null ? null : current.parentFolderId();
-    if (current == null && connectionTree.selectedValue() instanceof ConnectionFolder folder) {
-      parent = folder.id();
-    }
-    editConnection(current, parent);
-  }
-
-  private void editConnection(Connection current, UUID parent) {
-    if (vault != null && !vault.isUnlocked()) {
-      unlockVaultAsync()
-          .thenAccept(
-              unlocked -> {
-                if (unlocked) {
-                  SwingUtilities.invokeLater(() -> showConnectionEditor(current, parent));
-                }
-              });
-      return;
-    }
-    showConnectionEditor(current, parent);
-  }
-
-  private void showConnectionEditor(Connection current, UUID parent) {
-    List<VaultEntry> entries = vault != null && vault.isUnlocked() ? vaultEntries() : List.of();
-    ConnectionEditor editor =
-        new ConnectionEditor(this, current, parent, connectionTree.folders(), entries);
-    editor.setVisible(true);
-    Connection edited = editor.result();
-    if (edited != null) {
-      runDatabaseAction(
-          () -> connections.save(edited), current == null ? edited.id() : null);
-    }
-  }
-
-  private List<VaultEntry> vaultEntries() {
-    try {
-      return vault.entries();
-    } catch (Exception error) {
-      showError("Could not read vault entries", error);
-      return List.of();
-    }
-  }
-
-  private void newFolder() {
-    newFolder(connectionTree.selectedValue() instanceof ConnectionFolder folder ? folder : null);
-  }
-
-  private void newFolder(ConnectionFolder parent) {
-    String name = JOptionPane.showInputDialog(this, "Folder name:");
-    if (name == null || name.isBlank()) {
-      return;
-    }
-    UUID parentId = parent == null ? null : parent.id();
-    ConnectionFolder folder = new ConnectionFolder(UUID.randomUUID(), parentId, name.trim(), 0);
-    runDatabaseAction(
-        () -> connections.save(folder), folder.id());
-  }
-
-  private void renameFolder(ConnectionFolder folder) {
-    String name =
-        (String)
-            JOptionPane.showInputDialog(
-                this,
-                "Folder name:",
-                "Rename folder",
-                JOptionPane.PLAIN_MESSAGE,
-                null,
-                null,
-                folder.name());
-    if (name == null || name.isBlank() || name.trim().equals(folder.name())) {
-      return;
-    }
-    runDatabaseAction(
-        () ->
-            connections.save(
-                new ConnectionFolder(
-                    folder.id(), folder.parentFolderId(), name.trim(), folder.sortOrder())));
-  }
-
-  private void deleteSelected() {
-    deleteItem(connectionTree.selectedValue());
-  }
-
-  private void deleteItem(Object selected) {
-    if (!(selected instanceof Connection || selected instanceof ConnectionFolder)) {
-      return;
-    }
-    if (selected instanceof ConnectionFolder folder
-        && (connectionTree.folders().stream()
-                .anyMatch(child -> folder.id().equals(child.parentFolderId()))
-            || connectionTree.connections().stream()
-                .anyMatch(child -> folder.id().equals(child.parentFolderId())))) {
-      JOptionPane.showMessageDialog(
-          this,
-          "Move or delete the connections and subfolders in this folder first.",
-          "Folder is not empty",
-          JOptionPane.INFORMATION_MESSAGE);
-      return;
-    }
-    if (JOptionPane.showConfirmDialog(
-                this, "Delete " + selected + "?", "Confirm deletion", JOptionPane.YES_NO_OPTION)
-        != JOptionPane.YES_OPTION) {
-      return;
-    }
-    if (selected instanceof Connection connection) {
-      runDatabaseAction(() -> connections.deleteConnection(connection.id()));
-    } else if (selected instanceof ConnectionFolder folder) {
-      runDatabaseAction(() -> connections.deleteFolder(folder.id()));
-    }
-  }
-
-  private void openVault() {
-    Path file = chooseVaultFile(FileDialog.LOAD);
-    if (file == null) {
-      return;
-    }
-    KdbxVault selectedVault = new KdbxVault(file);
-    long operation = ++vaultOperationVersion;
-    unlockVaultAsync(selectedVault)
-        .thenAccept(
-            unlocked ->
-                SwingUtilities.invokeLater(
-                    () -> {
-                      if (operation != vaultOperationVersion || !isDisplayable()) {
-                        selectedVault.lock();
-                        return;
-                      }
-                      if (unlocked) {
-                        activateVault(selectedVault, "Vault opened: " + file);
-                        new VaultBrowserDialog(this, selectedVault).setVisible(true);
-                      }
-                    }));
-  }
-
-  private void createVault() {
-    Path file = chooseVaultFile(FileDialog.SAVE);
-    if (file == null) {
-      return;
-    }
-    JPasswordField first = new JPasswordField(24);
-    JPasswordField second = new JPasswordField(24);
-    JPanel fields = new JPanel(new java.awt.GridLayout(2, 2, 4, 4));
-    fields.add(new JLabel("Master password:"));
-    fields.add(first);
-    fields.add(new JLabel("Confirm password:"));
-    fields.add(second);
-    if (JOptionPane.showConfirmDialog(
-            this, fields, "Create KeePass vault", JOptionPane.OK_CANCEL_OPTION)
-        != JOptionPane.OK_OPTION) {
-      return;
-    }
-    char[] password = first.getPassword();
-    char[] confirmation = second.getPassword();
-    first.setText("");
-    second.setText("");
-    if (password.length == 0 || !Arrays.equals(password, confirmation)) {
-      Arrays.fill(password, '\0');
-      Arrays.fill(confirmation, '\0');
-      showStatus("Vault passwords did not match");
-      return;
-    }
-    Arrays.fill(confirmation, '\0');
-    long operation = ++vaultOperationVersion;
-    CompletableFuture.supplyAsync(
-            () -> {
-              try {
-                KdbxVault.create(file, password);
-                KdbxVault createdVault = new KdbxVault(file);
-                createdVault.unlock(password);
-                return createdVault;
-              } catch (Exception error) {
-                throw new RuntimeException(error);
-              } finally {
-                Arrays.fill(password, '\0');
-              }
-            })
-        .whenComplete(
-            (createdVault, error) ->
-                SwingUtilities.invokeLater(
-                    () -> {
-                      if (operation != vaultOperationVersion || !isDisplayable()) {
-                        if (createdVault != null) {
-                          createdVault.lock();
-                        }
-                        return;
-                      }
-                      if (error == null) {
-                        activateVault(createdVault, "Vault created: " + file);
-                        new VaultBrowserDialog(this, createdVault).setVisible(true);
-                      } else {
-                        showError("Could not create or open vault", error);
-                      }
-                    }));
-  }
-
-  private void activateVault(KdbxVault selectedVault, String message) {
-    if (vault != null) {
-      vault.lock();
-    }
-    vault = selectedVault;
-    lastVaultUse = System.nanoTime();
-    runDatabaseAction(() -> settings.put("vault.path", selectedVault.path().toString()));
-    showStatus(message);
-  }
-
-  private Path chooseVaultFile(int mode) {
-    FileDialog chooser =
-        new FileDialog(
-            this, mode == FileDialog.SAVE ? "Create KeePass vault" : "Open KeePass vault", mode);
-    if (mode == FileDialog.SAVE) {
-      chooser.setFile("vault.kdbx");
-    }
-    try {
-      chooser.setVisible(true);
-      var files = chooser.getFiles();
-      return files.length == 0 ? null : files[0].toPath();
-    } finally {
-      chooser.dispose();
-    }
-  }
-
-  private void browseVault() {
-    KdbxVault selectedVault = vault;
-    if (selectedVault == null) {
-      showStatus("Select a KeePass vault first");
-      return;
-    }
-    unlockVaultAsync(selectedVault)
-        .thenAccept(
-            unlocked -> {
-              if (unlocked) {
-                SwingUtilities.invokeLater(
-                    () -> {
-                      if (vault == selectedVault) {
-                        new VaultBrowserDialog(this, selectedVault).setVisible(true);
-                      }
-                    });
-              }
-            });
-  }
-
-  private void reloadVault() {
-    if (vault == null) {
-      return;
-    }
-    vault.lock();
-    unlockVaultAsync();
-  }
-
-  private void loadSettings() {
-    CompletableFuture.supplyAsync(
-            () -> {
-              try {
-                return new LoadedSettings(
-                    settings.get("vault.path").orElse(null),
-                    AppSettings.load(settings),
-                    intSetting("window.x", -1),
-                    intSetting("window.y", -1),
-                    intSetting("window.width", 1100),
-                    intSetting("window.height", 700),
-                    intSetting("window.divider", 300),
-                    settings.get("tree.expanded").orElse(""),
-                    settings.get("tree.selected").orElse(""));
-              } catch (SQLException error) {
-                throw new RuntimeException(error);
-              }
-            })
-        .whenComplete(
-            (loaded, error) ->
-                SwingUtilities.invokeLater(
-                    () -> {
-                      if (error == null) {
-                        preferences = loaded.preferences();
-                        if (loaded.vaultPath() != null) {
-                          vault = new KdbxVault(Path.of(loaded.vaultPath()));
-                        }
-                        setSize(loaded.width(), loaded.height());
-                        if (loaded.x() >= 0 && loaded.y() >= 0) {
-                          setLocation(loaded.x(), loaded.y());
-                        }
-                        split.setDividerLocation(loaded.divider());
-                        connectionTree.restoreOnNextLoad(
-                            loaded.expandedFolders(), loaded.selection());
-                      } else if (error != null) {
-                        showError("Could not load settings", error);
-                      }
-                      refreshTree();
-                    }));
-  }
-
-  private int intSetting(String key, int fallback) throws SQLException {
-    try {
-      return settings.get(key).map(Integer::parseInt).orElse(fallback);
-    } catch (NumberFormatException invalid) {
-      return fallback;
-    }
-  }
-
-  private CompletableFuture<Boolean> unlockVaultAsync() {
-    if (vault == null) {
-      showStatus("Select a KeePass vault first");
-      return CompletableFuture.completedFuture(false);
-    }
-    return unlockVaultAsync(vault);
-  }
-
-  private CompletableFuture<Boolean> unlockVaultAsync(KdbxVault selectedVault) {
-    if (selectedVault.isUnlocked()) {
-      lastVaultUse = System.nanoTime();
-      return CompletableFuture.completedFuture(true);
-    }
-    JPasswordField field = new JPasswordField(24);
-    if (JOptionPane.showConfirmDialog(
-            this, field, "Vault master password", JOptionPane.OK_CANCEL_OPTION)
-        != JOptionPane.OK_OPTION) {
-      return CompletableFuture.completedFuture(false);
-    }
-    char[] password = field.getPassword();
-    field.setText("");
-    return CompletableFuture.supplyAsync(
-        () -> {
-          try {
-            selectedVault.unlock(password);
-            lastVaultUse = System.nanoTime();
-            return true;
-          } catch (Exception error) {
-            SwingUtilities.invokeLater(() -> showError("Could not unlock vault", error));
-            return false;
-          } finally {
-            java.util.Arrays.fill(password, '\0');
-          }
-        });
-  }
-
-  private void lockVault() {
-    if (vault != null) {
-      vault.lock();
-      showStatus("Vault locked");
-    }
-  }
-
-  private void runDatabaseAction(DatabaseAction action) {
-    runDatabaseAction(action, null);
-  }
-
-  private void runDatabaseAction(DatabaseAction action, UUID revealId) {
-    CompletableFuture.runAsync(
-            () -> {
-              try {
-                action.run();
-              } catch (SQLException error) {
-                throw new RuntimeException(error);
-              }
-            })
-        .whenComplete(
-            (ignored, error) ->
-                SwingUtilities.invokeLater(
-                    () -> {
-                      if (error == null) {
-                        refreshTree(revealId);
-                      } else {
-                        showError("Could not save change", error);
-                      }
-                    }));
-  }
-
-  private void showStatus(String text) {
-    status.setText(text);
-  }
-
-  private void showError(String message, Throwable error) {
-    Throwable cause = error.getCause() == null ? error : error.getCause();
-    JOptionPane.showMessageDialog(
-        this, message + ": " + cause.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-  }
-
-  private static JMenuItem item(String title, Icon icon, Runnable action) {
-    JMenuItem item = new JMenuItem(title, icon);
-    item.addActionListener(event -> action.run());
-    return item;
-  }
-
-  private static JMenu menu(String title) {
+  private static JMenu topMenu(String title) {
     JMenu menu = new JMenu(title);
     menu.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10));
     return menu;
   }
+  private static JMenuItem item(String title, Runnable action) {
+    JMenuItem item = new JMenuItem(title); item.addActionListener(event -> action.run()); return item;
+  }
 
-  private record TreeData(List<ConnectionFolder> folders, List<Connection> connections) {}
+  private JButton vaultButton(String title, javax.swing.Icon icon, Runnable action) {
+    JButton button = button(title, icon, action); vaultActions.add(button); return button;
+  }
+  private JButton selectedIdentityButton(String title, javax.swing.Icon icon, Runnable action) {
+    JButton button = button(title, icon, action); identityActions.add(button); return button;
+  }
+  private JMenuItem vaultItem(String title, Runnable action) {
+    JMenuItem item = item(title, action); vaultActions.add(item); return item;
+  }
+  private JMenuItem selectedHostItem(String title, Runnable action) {
+    JMenuItem item = item(title, action); hostActions.add(item); return item;
+  }
+  private JMenuItem selectedSessionItem(String title, Runnable action) {
+    JMenuItem item = item(title, action); sessionActions.add(item); return item;
+  }
 
-  private record LoadedSettings(
-      String vaultPath,
-      AppSettings preferences,
-      int x,
-      int y,
-      int width,
-      int height,
-      int divider,
-      String expandedFolders,
-      String selection) {}
+  private void updateActions() {
+    vaultActions.forEach(action -> action.setEnabled(!locked));
+    hostActions.forEach(action -> action.setEnabled(!locked && connectionTree.selectedValue() != null));
+    if (connectSelectedItem != null)
+      connectSelectedItem.setEnabled(!locked && connectionTree.selectedValue() instanceof Connection);
+    identityActions.forEach(action -> action.setEnabled(!locked && identities.getSelectedValue() != null));
+    sessionActions.forEach(action -> action.setEnabled(!locked && tabs.getSelectedIndex() >= 0));
+    boolean canCopySudo = !locked && connectionTree.hasSudoPassword(tabs.selectedConnection());
+    if (copySudoSessionItem != null) copySudoSessionItem.setEnabled(canCopySudo);
+    if (copySudoButton != null) copySudoButton.setEnabled(canCopySudo);
+    if (unlockMenuItem != null) unlockMenuItem.setEnabled(locked && vault != null);
+    if (unlockWelcomeButton != null) unlockWelcomeButton.setEnabled(locked && vault != null);
+  }
 
-  @FunctionalInterface
-  private interface DatabaseAction {
-    void run() throws SQLException;
+  private void showLocked() {
+    locked = true;
+    vaultPath.setText(vault == null ? "No vault selected" : vault.path().toString());
+    ((CardLayout) cards.getLayout()).show(cards, "locked");
+    status.setText(vault == null ? "Create or open a KeePass vault to begin." : "Vault locked");
+    updateVaultState();
+    updateActions();
+  }
+
+  private void showWorkspace() {
+    locked = false;
+    lastActivity = System.nanoTime();
+    ((CardLayout) cards.getLayout()).show(cards, "workspace");
+    if (!sidebarWidthInitialized) SwingUtilities.invokeLater(this::initializeSidebarWidth);
+    status.setText("Vault unlocked: " + vault.path());
+    updateVaultState();
+    updateActions();
+    refreshData(null);
+  }
+
+  private void initializeSidebarWidth() {
+    if (sidebarWidthInitialized || !workspace.isShowing() || workspace.getWidth() <= 0) return;
+    int maxWidth = workspace.getWidth() - workspace.getDividerSize()
+        - workspace.getRightComponent().getMinimumSize().width;
+    workspace.setDividerLocation(Math.min(initialSidebarWidth, Math.max(190, maxWidth)));
+    sidebarWidthInitialized = true;
+  }
+
+  private void openVault() {
+    Path path = chooseVaultFile(FileDialog.LOAD);
+    if (path == null) return;
+    lockVault();
+    vault = new KdbxVault(path);
+    saveSetting("vault.path", path.toAbsolutePath().toString());
+    showLocked();
+    unlockVault();
+  }
+
+  private void createVault() {
+    Path path = chooseVaultFile(FileDialog.SAVE);
+    if (path == null) return;
+    JPasswordField first = new JPasswordField(24), second = new JPasswordField(24);
+    JPanel fields = new JPanel(new java.awt.GridLayout(2, 2, 5, 5));
+    fields.add(new JLabel("Master password:")); fields.add(first);
+    fields.add(new JLabel("Confirm password:")); fields.add(second);
+    if (JOptionPane.showConfirmDialog(this, fields, "Create KeePass vault",
+        JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) return;
+    char[] password = first.getPassword(), confirmation = second.getPassword();
+    first.setText(""); second.setText("");
+    if (password.length == 0 || !Arrays.equals(password, confirmation)) {
+      Arrays.fill(password, '\0'); Arrays.fill(confirmation, '\0');
+      JOptionPane.showMessageDialog(this, "Enter matching, non-empty passwords."); return;
+    }
+    Arrays.fill(confirmation, '\0');
+    lockVault();
+    long version = operationVersion;
+    status.setText("Creating vault...");
+    CompletableFuture.supplyAsync(() -> {
+      try {
+        KdbxVault.create(path, password);
+        KdbxVault created = new KdbxVault(path);
+        created.unlock(password);
+        return created;
+      } catch (Exception error) { throw new RuntimeException(error); }
+      finally { Arrays.fill(password, '\0'); }
+    }, vaultWorker).whenComplete((created, error) -> SwingUtilities.invokeLater(() -> {
+      if (version != operationVersion || !isDisplayable()) {
+        if (created != null) created.lock();
+        return;
+      }
+      if (error != null) { showError("Could not create vault", error); showLocked(); return; }
+      vault = created;
+      saveSetting("vault.path", path.toAbsolutePath().toString());
+      showWorkspace();
+    }));
+  }
+
+  private Path chooseVaultFile(int mode) {
+    FileDialog dialog = new FileDialog(this,
+        mode == FileDialog.LOAD ? "Open KeePass vault" : "Create KeePass vault", mode);
+    if (mode == FileDialog.SAVE) dialog.setFile("vault.kdbx");
+    try {
+      dialog.setVisible(true);
+      return dialog.getFiles().length == 0 ? null : dialog.getFiles()[0].toPath();
+    } finally { dialog.dispose(); }
+  }
+
+  private void unlockVault() {
+    KdbxVault selected = vault;
+    if (selected == null) { openVault(); return; }
+    if (!locked) return;
+    JPasswordField field = new JPasswordField(24);
+    JOptionPane prompt = new JOptionPane(field, JOptionPane.QUESTION_MESSAGE,
+        JOptionPane.OK_CANCEL_OPTION);
+    JDialog dialog = prompt.createDialog(this, "Unlock vault");
+    dialog.addWindowListener(new WindowAdapter() {
+      @Override public void windowOpened(WindowEvent event) {
+        SwingUtilities.invokeLater(() -> {
+          field.requestFocusInWindow();
+          field.selectAll();
+        });
+      }
+    });
+    dialog.setVisible(true);
+    dialog.dispose();
+    if (!Integer.valueOf(JOptionPane.OK_OPTION).equals(prompt.getValue())) {
+      field.setText("");
+      return;
+    }
+    char[] password = field.getPassword(); field.setText("");
+    long version = ++operationVersion;
+    status.setText("Unlocking vault...");
+    CompletableFuture.runAsync(() -> {
+      try { selected.unlock(password); }
+      catch (Exception error) { throw new RuntimeException(error); }
+      finally { Arrays.fill(password, '\0'); }
+    }, vaultWorker).whenComplete((ignored, error) -> SwingUtilities.invokeLater(() -> {
+      if (version != operationVersion || vault != selected) { selected.lock(); return; }
+      if (error != null) { showError("Could not unlock vault", error); showLocked(); }
+      else showWorkspace();
+    }));
+  }
+
+  private CompletableFuture<Boolean> sessionReady() {
+    return CompletableFuture.completedFuture(!locked && vault != null && vault.isUnlocked());
+  }
+
+  private void lockVault() {
+    operationVersion++;
+    for (Window child : getOwnedWindows()) if (child.isVisible()) child.dispose();
+    tabs.closeAll();
+    connectionTree.showConnections(List.of(), List.of());
+    connectionTree.details().showConnection(null);
+    connectionTree.setIdentities(List.of());
+    quickConnect.setText("");
+    identities.setListData(new VaultEntry[0]);
+    identityHint.setText("  No identities yet. Create one here or while adding a host.");
+    showLocked();
+    KdbxVault selected = vault;
+    if (selected != null) vaultWorker.execute(selected::lock);
+  }
+
+  private void reloadVault() {
+    if (vault == null) return;
+    lockVault();
+    unlockVault();
+  }
+
+  private void refreshData(UUID revealId) {
+    if (locked || vault == null) return;
+    KdbxVault selected = vault;
+    long version = operationVersion;
+    CompletableFuture.supplyAsync(() -> {
+      try { return new Data(selected.folders(), selected.connections(), selected.entries(),
+          selected.credentialEntries()); }
+      catch (Exception error) { throw new RuntimeException(error); }
+    }, vaultWorker).whenComplete((data, error) -> SwingUtilities.invokeLater(() -> {
+      if (locked || version != operationVersion || vault != selected) return;
+      if (error != null) { showError("Could not read vault", error); return; }
+      connectionTree.setIdentities(data.credentials());
+      connectionTree.showConnections(data.folders(), data.connections());
+      identities.setListData(data.identities().toArray(VaultEntry[]::new));
+      identityHint.setText(data.identities().isEmpty()
+          ? "  No identities yet. Create one here or while adding a host."
+          : "  Reusable credentials in this vault");
+      if (revealId != null) connectionTree.reveal(revealId);
+      updateActions();
+    }));
+  }
+
+  private CompletableFuture<Void> mutate(VaultAction action, UUID revealId) {
+    if (locked || vault == null) return CompletableFuture.failedFuture(new IllegalStateException("Vault is locked"));
+    KdbxVault selected = vault;
+    long version = operationVersion;
+    return CompletableFuture.runAsync(() -> {
+      try { action.run(selected); selected.save(); }
+      catch (Exception error) { selected.recoverAfterFailedSave(); throw new RuntimeException(error); }
+    }, vaultWorker).whenComplete((ignored, error) -> SwingUtilities.invokeLater(() -> {
+      if (version != operationVersion || vault != selected || locked) return;
+      if (!selected.isUnlocked()) { lockVault(); return; }
+      refreshData(revealId);
+    }));
+  }
+
+  private void editHost(Connection current, UUID parent) {
+    if (locked) return;
+    if (current == null && parent == null && connectionTree.selectedValue() instanceof ConnectionFolder folder)
+      parent = folder.id();
+    try {
+      ConnectionEditor editor = new ConnectionEditor(this, current, parent,
+          connectionTree.folders(), vault.entries(), vault.credentialEntries(),
+          submission -> saveHost(submission));
+      editor.setVisible(true);
+    } catch (Exception error) { showError("Could not open host editor", error); }
+  }
+
+  private CompletableFuture<Void> saveHost(ConnectionEditor.Submission submission) {
+    Connection host = submission.connection();
+    Map<UUID, IdentityEditor.Change> drafts = new LinkedHashMap<>();
+    submission.newIdentities().forEach((id, change) -> drafts.put(id,
+        new IdentityEditor.Change(change.title(), change.username(),
+            change.password() == null ? null : change.password().clone(), change.attachmentPath())));
+    Map<UUID, ConnectionEditor.HostPassword> hostPasswords = new LinkedHashMap<>();
+    submission.hostPasswords().forEach((id, change) -> hostPasswords.put(id,
+        new ConnectionEditor.HostPassword(change.purpose(),
+            change.password() == null ? null : change.password().clone())));
+    return mutate(selected -> {
+      for (Map.Entry<UUID, IdentityEditor.Change> item : drafts.entrySet()) {
+        IdentityEditor.Change draft = item.getValue();
+        byte[] attachment = draft.attachmentPath() == null ? null : Files.readAllBytes(draft.attachmentPath());
+        try { selected.addEntry(item.getKey(), draft.title(), draft.username(), draft.password(),
+            java.util.Map.of(), draft.attachmentName(), attachment); }
+        finally { if (attachment != null) Arrays.fill(attachment, (byte) 0); }
+      }
+      for (Map.Entry<UUID, ConnectionEditor.HostPassword> item : hostPasswords.entrySet()) {
+        ConnectionEditor.HostPassword change = item.getValue();
+        selected.putHostSecret(item.getKey(), host.id(), change.purpose(),
+            host.name() + ("ssh".equals(change.purpose()) ? " SSH password" : " sudo password"),
+            host.username(), change.password());
+      }
+      selected.putConnection(host);
+    }, host.id()).whenComplete((ignored, error) -> {
+      drafts.values().forEach(IdentityEditor.Change::clear);
+      hostPasswords.values().forEach(ConnectionEditor.HostPassword::clear);
+    });
+  }
+
+  private void editSelectedHost() {
+    if (connectionTree.selectedValue() instanceof Connection host) editHost(host, host.parentFolderId());
+    else if (connectionTree.selectedValue() instanceof ConnectionFolder folder) renameFolder(folder);
+  }
+
+  private void deleteSelectedHost() { deleteItem(connectionTree.selectedValue()); }
+
+  private void newFolder(ConnectionFolder parent) {
+    if (locked) return;
+    String name = JOptionPane.showInputDialog(this, "Folder name:");
+    if (name == null || name.isBlank()) return;
+    ConnectionFolder folder = new ConnectionFolder(UUID.randomUUID(), parent == null ? null : parent.id(), name.trim(), 0);
+    mutate(v -> v.putFolder(folder), folder.id()).exceptionally(error -> { showErrorLater("Could not save folder", error); return null; });
+  }
+
+  private void renameFolder(ConnectionFolder folder) {
+    String name = JOptionPane.showInputDialog(this, "Folder name:", folder.name());
+    if (name == null || name.isBlank()) return;
+    ConnectionFolder updated = new ConnectionFolder(folder.id(), folder.parentFolderId(), name.trim(), folder.sortOrder());
+    mutate(v -> v.putFolder(updated), folder.id()).exceptionally(error -> { showErrorLater("Could not rename folder", error); return null; });
+  }
+
+  private void deleteItem(Object selected) {
+    if (locked || selected == null) return;
+    if (JOptionPane.showConfirmDialog(this, "Delete " + selected + "?", "Confirm deletion",
+        JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
+    mutate(v -> {
+      if (selected instanceof Connection host) v.deleteConnection(host.id());
+      else if (selected instanceof ConnectionFolder folder) v.deleteFolder(folder.id());
+    }, null).exceptionally(error -> { showErrorLater("Could not delete", error); return null; });
+  }
+
+  private void editIdentity(VaultEntry current) {
+    if (locked) return;
+    IdentityEditor.editAndSave(this, current, change -> mutate(v -> {
+      byte[] attachment = change.attachmentPath() == null ? null : Files.readAllBytes(change.attachmentPath());
+      try {
+        if (current == null) v.addEntry(change.title(), change.username(), change.password(),
+            java.util.Map.of(), change.attachmentName(), attachment);
+        else v.updateEntry(current.id(), change.title(), change.username(), change.password(),
+            null, change.attachmentName(), attachment);
+      } finally {
+        if (attachment != null) Arrays.fill(attachment, (byte) 0);
+      }
+    }, null));
+  }
+
+  private void deleteIdentity() {
+    VaultEntry selected = identities.getSelectedValue();
+    if (locked || selected == null) return;
+    boolean used = connectionTree.connections().stream().anyMatch(host ->
+        selected.id().equals(host.sshCredentialEntryId()) || selected.id().equals(host.sudoCredentialEntryId()));
+    if (used) {
+      JOptionPane.showMessageDialog(this, "This identity is used by a host. Reassign that host first.");
+      return;
+    }
+    if (JOptionPane.showConfirmDialog(this, "Delete identity " + selected.title() + " from the vault?",
+        "Confirm deletion", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
+    mutate(v -> v.deleteIdentity(selected.id()), null)
+        .exceptionally(error -> { showErrorLater("Could not delete identity", error); return null; });
+  }
+
+  private void quickConnect() {
+    if (locked) return;
+    String target = quickConnect.getText().trim();
+    Connection selected = connectionTree.selectedValue() instanceof Connection host ? host : null;
+    Connection match = target.isBlank() ? selected : connectionTree.connections().stream()
+        .filter(host -> host.name().equalsIgnoreCase(target) || host.hostname().equalsIgnoreCase(target))
+        .findFirst().orElse(null);
+    if (match == null) { showStatus("Select a host or enter a saved host name."); return; }
+    openHost(match);
+  }
+
+  private void connectSelected() {
+    if (!locked && connectionTree.selectedValue() instanceof Connection host) openHost(host);
+  }
+
+  private void installSudoShortcut() {
+    int modifiers = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()
+        | InputEvent.SHIFT_DOWN_MASK;
+    getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+        .put(KeyStroke.getKeyStroke(KeyEvent.VK_P, modifiers), "copySudoPassword");
+    getRootPane().getActionMap().put("copySudoPassword", new AbstractAction() {
+      @Override public void actionPerformed(ActionEvent event) { copySudoForFocusedContext(); }
+    });
+  }
+
+  private void copySudoForFocusedContext() {
+    if (locked) return;
+    Connection selectedHost = connectionTree.selectedValue() instanceof Connection host ? host : null;
+    boolean useTree = connectionTree.isTreeFocused();
+    Connection activeSession = tabs.selectedConnection();
+    Connection target = useTree ? selectedHost : activeSession;
+    if (target == null) target = selectedHost;
+    if (target == null) {
+      showStatus("Select a host or open a session to copy a sudo password");
+      return;
+    }
+    if (connectionTree.hasSudoPassword(target)) {
+      if (!useTree && activeSession != null) tabs.copySudoPassword();
+      else tabs.copySudoPassword(target);
+    }
+    else showStatus("No sudo password is available for " + target.name());
+  }
+
+  private void openHost(Connection host) {
+    String issue = connectionTree.issue(host);
+    if (issue != null) {
+      int choice = JOptionPane.showConfirmDialog(this,
+          "This host has a missing credential: " + issue + ".\nEdit the host now?",
+          "Host needs attention", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+      if (choice == JOptionPane.YES_OPTION) editHost(host, host.parentFolderId());
+      return;
+    }
+    tabs.open(host);
+  }
+
+  private void editSettings() {
+    AppSettings changed = SettingsDialog.edit(this, preferences);
+    if (changed == null) return;
+    preferences = changed;
+    try { changed.save(settings); showStatus("Settings saved"); }
+    catch (Exception error) { showError("Could not save settings", error); }
+  }
+
+  private void recordActivity(AWTEvent event) {
+    if (locked || !(event.getSource() instanceof Component component)) return;
+    Window owner = SwingUtilities.getWindowAncestor(component);
+    while (owner != null) {
+      if (owner == this) { lastActivity = System.nanoTime(); return; }
+      owner = owner.getOwner();
+    }
+  }
+
+  private void checkAutoLock() {
+    int minutes = preferences.vaultAutoLockMinutes();
+    if (!locked && minutes > 0 && System.nanoTime() - lastActivity >= TimeUnit.MINUTES.toNanos(minutes))
+      lockVault();
+  }
+
+  private void closeWindow() {
+    if ((getExtendedState() & Frame.MAXIMIZED_BOTH) != Frame.MAXIMIZED_BOTH) {
+      saveSetting("window.x", Integer.toString(getX()));
+      saveSetting("window.y", Integer.toString(getY()));
+      saveSetting("window.width", Integer.toString(getWidth()));
+      saveSetting("window.height", Integer.toString(getHeight()));
+    }
+    if (sidebarWidthInitialized)
+      saveSetting("window.divider", Integer.toString(workspace.getDividerLocation()));
+    lockVault();
+    dispose();
+  }
+
+  @Override public void dispose() {
+    operationVersion++;
+    autoLock.stop();
+    Toolkit.getDefaultToolkit().removeAWTEventListener(activityListener);
+    tabs.shutdown();
+    if (vault != null) vaultWorker.execute(vault::lock);
+    vaultWorker.shutdown();
+    super.dispose();
+  }
+
+  private int number(String key, int fallback) {
+    try { return settings.get(key).map(Integer::parseInt).orElse(fallback); }
+    catch (Exception error) { return fallback; }
+  }
+
+  private void saveSetting(String key, String value) {
+    try { settings.put(key, value); }
+    catch (Exception error) { showError("Could not save preference", error); }
+  }
+  private void showStatus(String text) { status.setText(text); }
+  private void updateVaultState() {
+    vaultState.setText((locked ? "Locked" : "Unlocked: " + vault.path().getFileName())
+        + "  |  " + tabs.getTabCount() + " session" + (tabs.getTabCount() == 1 ? "" : "s"));
+  }
+  private void showErrorLater(String message, Throwable error) {
+    SwingUtilities.invokeLater(() -> showError(message, error));
+  }
+  private void showError(String message, Throwable error) {
+    Throwable cause = error;
+    while (cause.getCause() != null) cause = cause.getCause();
+    JOptionPane.showMessageDialog(this, message + ": " + cause.getMessage(), "Remote Manager", JOptionPane.ERROR_MESSAGE);
+  }
+
+  private record Data(List<ConnectionFolder> folders, List<Connection> connections,
+      List<VaultEntry> identities, List<VaultEntry> credentials) {}
+  @FunctionalInterface private interface VaultAction { void run(KdbxVault vault) throws Exception; }
+
+  private final class TreeActions implements ConnectionTreePanel.Actions {
+    @Override public void open(Connection host) { if (!locked) openHost(host); }
+    @Override public void copySudoPassword(Connection host) {
+      if (!locked && connectionTree.hasSudoPassword(host)) tabs.copySudoPassword(host);
+    }
+    @Override public void edit(Connection host) { editHost(host, host.parentFolderId()); }
+    @Override public void newFolder(ConnectionFolder parent) { MainWindow.this.newFolder(parent); }
+    @Override public void newConnection(ConnectionFolder parent) { editHost(null, parent.id()); }
+    @Override public void rename(ConnectionFolder folder) { MainWindow.this.renameFolder(folder); }
+    @Override public void deleteFolder(ConnectionFolder folder) { deleteItem(folder); }
+    @Override public void deleteConnection(Connection host) { deleteItem(host); }
   }
 }

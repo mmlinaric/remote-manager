@@ -21,8 +21,6 @@
         </repository>
     </repositories>
     <dependencies>
-        <dependency><groupId>org.xerial</groupId><artifactId>sqlite-jdbc</artifactId><version>3.53.4.0</version></dependency>
-        <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-core</artifactId><version>13.8.0</version></dependency>
         <dependency><groupId>com.hierynomus</groupId><artifactId>sshj</artifactId><version>0.41.1</version></dependency>
         <dependency><groupId>org.jetbrains.jediterm</groupId><artifactId>jediterm-ui</artifactId><version>3.66</version></dependency>
         <dependency><groupId>org.jetbrains.jediterm</groupId><artifactId>jediterm-core</artifactId><version>3.66</version></dependency>

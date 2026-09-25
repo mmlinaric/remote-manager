@@ -3,7 +3,7 @@ package com.example.remotemanager.ui.settings;
 import com.example.remotemanager.app.AppPaths;
 import com.example.remotemanager.persistence.SettingsRepository;
 import java.nio.file.Path;
-import java.sql.SQLException;
+import java.io.IOException;
 
 public record AppSettings(
     String terminalFont,
@@ -14,21 +14,21 @@ public record AppSettings(
     Path knownHosts) {
 
   public static AppSettings defaults() {
-    return new AppSettings("Monospaced", 13, 5000, 30, 0, AppPaths.knownHosts());
+    return new AppSettings("Monospaced", 13, 5000, 30, 30, AppPaths.knownHosts());
   }
 
-  public static AppSettings load(SettingsRepository repository) throws SQLException {
+  public static AppSettings load(SettingsRepository repository) {
     AppSettings defaults = defaults();
     return new AppSettings(
         repository.get("terminal.font").orElse(defaults.terminalFont()),
         number(repository, "terminal.fontSize", defaults.terminalFontSize()),
         number(repository, "terminal.scrollback", defaults.scrollbackLines()),
         number(repository, "clipboard.seconds", defaults.clipboardSeconds()),
-        number(repository, "vault.autoLockMinutes", defaults.vaultAutoLockMinutes()),
+        autoLock(repository, defaults.vaultAutoLockMinutes()),
         Path.of(repository.get("ssh.knownHosts").orElse(defaults.knownHosts().toString())));
   }
 
-  public void save(SettingsRepository repository) throws SQLException {
+  public void save(SettingsRepository repository) throws IOException {
     repository.put("terminal.font", terminalFont);
     repository.put("terminal.fontSize", Integer.toString(terminalFontSize));
     repository.put("terminal.scrollback", Integer.toString(scrollbackLines));
@@ -37,12 +37,16 @@ public record AppSettings(
     repository.put("ssh.knownHosts", knownHosts.toString());
   }
 
-  private static int number(SettingsRepository repository, String key, int fallback)
-      throws SQLException {
+  private static int number(SettingsRepository repository, String key, int fallback) {
     try {
       return repository.get(key).map(Integer::parseInt).orElse(fallback);
     } catch (NumberFormatException invalid) {
       return fallback;
     }
+  }
+
+  private static int autoLock(SettingsRepository repository, int fallback) {
+    int value = number(repository, "vault.autoLockMinutes", fallback);
+    return value == 0 || value == 5 || value == 15 || value == 30 ? value : fallback;
   }
 }

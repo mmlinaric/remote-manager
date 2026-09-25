@@ -1,7 +1,5 @@
 package com.example.remotemanager.app;
 
-import com.example.remotemanager.persistence.ConnectionRepository;
-import com.example.remotemanager.persistence.Database;
 import com.example.remotemanager.persistence.SettingsRepository;
 import com.example.remotemanager.ui.main.MainWindow;
 import java.nio.file.Files;
@@ -19,28 +17,26 @@ public final class Main {
   public static void main(String[] args) {
     try {
       Files.createDirectories(AppPaths.dataDirectory());
-      Database database = new Database(AppPaths.dataDirectory().resolve("connections.db"));
-      database.migrate();
-      SwingUtilities.invokeLater(() -> showWindow(database));
+      SettingsRepository settings = new SettingsRepository(AppPaths.dataDirectory().resolve("settings.properties"));
+      SwingUtilities.invokeLater(() -> showWindow(settings));
     } catch (Exception error) {
-      LOG.error("Could not initialize application database", error);
+      LOG.error("Could not initialize application settings", error);
       SwingUtilities.invokeLater(
           () ->
               JOptionPane.showMessageDialog(
                   null,
-                  "Could not initialize application database: " + error.getMessage(),
+                  "Could not initialize application settings: " + error.getMessage(),
                   "Startup error",
                   JOptionPane.ERROR_MESSAGE));
     }
   }
 
-  private static void showWindow(Database database) {
+  private static void showWindow(SettingsRepository settings) {
     try {
       UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
     } catch (Exception error) {
       LOG.warn("Could not select the system look and feel", error);
     }
-    new MainWindow(new ConnectionRepository(database), new SettingsRepository(database))
-        .setVisible(true);
+    new MainWindow(settings).setVisible(true);
   }
 }

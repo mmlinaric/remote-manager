@@ -13,9 +13,12 @@ import java.awt.Toolkit;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import javax.swing.Icon;
 import javax.swing.JComponent;
@@ -26,6 +29,7 @@ import javax.swing.SwingUtilities;
 
 public final class SessionTabs extends JTabbedPane {
   private final Map<Component, OpenTab> openTabs = new HashMap<>();
+  private final AtomicLong operationVersion = new AtomicLong();
   private final Supplier<Vault> vaultSupplier;
   private final Supplier<CompletableFuture<Boolean>> unlockVault;
   private final Consumer<String> status;
@@ -48,6 +52,7 @@ public final class SessionTabs extends JTabbedPane {
   }
 
   public void open(Connection connection) {
+    long version = operationVersion.get();
     boolean requiresVault =
         connection.authenticationType() == AuthenticationType.KDBX_PRIVATE_KEY
             || connection.authenticationType() == AuthenticationType.PASSWORD;
@@ -55,8 +60,10 @@ public final class SessionTabs extends JTabbedPane {
         requiresVault ? unlockVault.get() : CompletableFuture.completedFuture(true);
     ready.thenAccept(
         unlocked -> {
-          if (unlocked) {
-            SwingUtilities.invokeLater(() -> startTab(connection));
+          if (unlocked && version == operationVersion.get()) {
+            SwingUtilities.invokeLater(() -> {
+              if (version == operationVersion.get()) startTab(connection, version);
+            });
           }
         });
   }
@@ -85,6 +92,7 @@ public final class SessionTabs extends JTabbedPane {
     if (tab == null) {
       return;
     }
+    tab.closed().set(true);
     openTabs.remove(tab.session().component());
     remove(tab.session().component());
     worker.execute(tab.session()::disconnect);
@@ -92,23 +100,37 @@ public final class SessionTabs extends JTabbedPane {
 
   public void copySudoPassword() {
     OpenTab tab = selectedTab();
-    if (tab == null || tab.connection().sudoCredentialEntryId() == null) {
-      status.accept("No sudo credential is assigned to this tab");
+    if (tab == null) return;
+    copySudoPassword(tab.connection(), () -> !tab.closed().get());
+  }
+
+  public Connection selectedConnection() {
+    OpenTab tab = selectedTab();
+    return tab == null ? null : tab.connection();
+  }
+
+  public void copySudoPassword(Connection connection) {
+    copySudoPassword(connection, () -> true);
+  }
+
+  private void copySudoPassword(Connection connection, BooleanSupplier sourceIsOpen) {
+    if (connection == null || connection.sudoCredentialEntryId() == null) {
+      status.accept("No sudo password is assigned to this host");
       return;
     }
+    long version = operationVersion.get();
     unlockVault
         .get()
         .thenAccept(
             unlocked -> {
-              if (!unlocked) {
-                return;
-              }
+              if (!unlocked || version != operationVersion.get() || !sourceIsOpen.getAsBoolean()) return;
               Duration timeout = Duration.ofSeconds(settings.get().clipboardSeconds());
-              worker.execute(() -> copySudo(tab.connection(), timeout));
+              worker.execute(() -> copySudo(connection, timeout, version, sourceIsOpen));
             });
   }
 
-  private void copySudo(Connection connection, Duration timeout) {
+  private void copySudo(Connection connection, Duration timeout, long version,
+      BooleanSupplier sourceIsOpen) {
     try {
       char[] password =
           vaultSupplier
@@ -116,20 +138,33 @@ public final class SessionTabs extends JTabbedPane {
               .getPassword(connection.sudoCredentialEntryId())
               .orElseThrow(() -> new IllegalStateException("Sudo password is missing in KeePass"));
       try {
-        SwingUtilities.invokeAndWait(
-            () -> {
+        SwingUtilities.invokeLater(() -> {
+          try {
+            if (version == operationVersion.get() && sourceIsOpen.getAsBoolean()
+                && vaultSupplier.get() != null && vaultSupplier.get().isUnlocked()) {
               clipboard.copy(password, timeout);
-              status.accept("Sudo password copied to clipboard");
-            });
-      } finally {
+              status.accept("Copied sudo password for " + connection.name()
+                  + "; clipboard clears in " + timeout.toSeconds() + " seconds");
+            }
+          } catch (Exception error) {
+            showError("Could not copy sudo password", error);
+          } finally {
+            java.util.Arrays.fill(password, '\0');
+          }
+        });
+      } catch (Exception error) {
         java.util.Arrays.fill(password, '\0');
+        throw error;
       }
     } catch (Exception error) {
-      SwingUtilities.invokeLater(() -> showError("Could not copy sudo password", error));
+      SwingUtilities.invokeLater(() -> {
+        if (version == operationVersion.get() && sourceIsOpen.getAsBoolean())
+          showError("Could not copy sudo password", error);
+      });
     }
   }
 
-  private void startTab(Connection connection) {
+  private void startTab(Connection connection, long version) {
     AppSettings preferences = settings.get();
     SshRemoteSession session =
         new SshRemoteSession(
@@ -141,7 +176,7 @@ public final class SessionTabs extends JTabbedPane {
             preferences.terminalFont(),
             preferences.terminalFontSize(),
             preferences.scrollbackLines());
-    OpenTab tab = new OpenTab(connection, session);
+    OpenTab tab = new OpenTab(connection, session, new AtomicBoolean());
     JComponent component = session.component();
     openTabs.put(component, tab);
     addTab(connection.name() + " (connecting)", SilkIcons.CONNECTING, component);
@@ -150,14 +185,20 @@ public final class SessionTabs extends JTabbedPane {
         () -> {
           try {
             session.connect();
+            if (version != operationVersion.get() || tab.closed().get()) {
+              session.disconnect();
+              return;
+            }
             SwingUtilities.invokeLater(
                 () -> {
+                  if (version != operationVersion.get() || tab.closed().get()) return;
                   updateTitle(tab, "connected");
                   status.accept("Connected to " + connection.hostname());
                 });
           } catch (Exception error) {
             SwingUtilities.invokeLater(
                 () -> {
+                  if (version != operationVersion.get() || tab.closed().get()) return;
                   updateTitle(tab, "failed");
                   showError("SSH connection failed", error);
                 });
@@ -270,13 +311,20 @@ public final class SessionTabs extends JTabbedPane {
   }
 
   public void shutdown() {
-    for (OpenTab tab : openTabs.values()) {
-      worker.execute(tab.session()::disconnect);
-    }
-    openTabs.clear();
+    closeAll();
     worker.shutdown();
     scheduler.shutdownNow();
   }
 
-  private record OpenTab(Connection connection, SshRemoteSession session) {}
+  public void closeAll() {
+    operationVersion.incrementAndGet();
+    for (OpenTab tab : openTabs.values()) {
+      tab.closed().set(true);
+      worker.execute(tab.session()::disconnect);
+    }
+    openTabs.clear();
+    removeAll();
+  }
+
+  private record OpenTab(Connection connection, SshRemoteSession session, AtomicBoolean closed) {}
 }
