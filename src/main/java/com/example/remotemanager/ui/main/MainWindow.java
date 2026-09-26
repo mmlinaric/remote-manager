@@ -16,6 +16,7 @@ import com.example.remotemanager.vault.kdbx.KdbxVault;
 import java.awt.AWTEvent;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Dimension;
@@ -73,6 +74,9 @@ import javax.swing.JComponent;
 import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+import javax.swing.UIManager;
+import javax.swing.event.MenuEvent;
+import javax.swing.event.MenuListener;
 
 /** Vault-first desktop workspace. All host and identity data comes from the unlocked KDBX file. */
 public final class MainWindow extends JFrame {
@@ -302,6 +306,25 @@ public final class MainWindow extends JFrame {
   private static JMenu topMenu(String title) {
     JMenu menu = new JMenu(title);
     menu.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10));
+    Color normalForeground = menu.getForeground();
+    Color selectedBackground = UIManager.getColor("Menu.selectionBackground");
+    if (selectedBackground != null) {
+      int brightness = (299 * selectedBackground.getRed()
+          + 587 * selectedBackground.getGreen()
+          + 114 * selectedBackground.getBlue()) / 1000;
+      Color selectedForeground = brightness < 150 ? Color.WHITE : Color.BLACK;
+      menu.addMenuListener(new MenuListener() {
+        @Override public void menuSelected(MenuEvent event) {
+          menu.setForeground(selectedForeground);
+        }
+        @Override public void menuDeselected(MenuEvent event) {
+          menu.setForeground(normalForeground);
+        }
+        @Override public void menuCanceled(MenuEvent event) {
+          menu.setForeground(normalForeground);
+        }
+      });
+    }
     return menu;
   }
   private static JMenuItem item(String title, Runnable action) {
