@@ -1,9 +1,11 @@
 package com.example.remotemanager;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.example.remotemanager.model.AuthenticationType;
+import com.example.remotemanager.model.ConnectionFolder;
 import com.example.remotemanager.ui.connections.ConnectionEditor;
 import java.awt.BorderLayout;
 import java.awt.Component;
@@ -11,6 +13,7 @@ import java.awt.Dialog;
 import java.awt.GraphicsEnvironment;
 import java.awt.GridBagLayout;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
@@ -22,6 +25,39 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 class ConnectionEditorLayoutTest {
+  @Test
+  void nestedFolderPathFitsInsideEditor() throws Exception {
+    Assumptions.assumeFalse(GraphicsEnvironment.isHeadless());
+    SwingUtilities.invokeAndWait(() -> {
+      ConnectionFolder first = new ConnectionFolder(UUID.randomUUID(), null,
+          "A very long folder name", 0);
+      ConnectionFolder second = new ConnectionFolder(UUID.randomUUID(), first.id(),
+          "Another very long folder name", 0);
+      ConnectionFolder third = new ConnectionFolder(UUID.randomUUID(), second.id(),
+          "A third very long folder name", 0);
+      ConnectionEditor editor = new ConnectionEditor(null, null, third.id(),
+          List.of(first, second, third), List.of(), List.of(),
+          submission -> CompletableFuture.completedFuture(null));
+      try {
+        editor.setModalityType(Dialog.ModalityType.MODELESS);
+        editor.setVisible(true);
+        JScrollPane scroll = (JScrollPane) ((BorderLayout) editor.getContentPane().getLayout())
+            .getLayoutComponent(BorderLayout.CENTER);
+        JPanel form = (JPanel) scroll.getViewport().getView();
+        JPanel folderRow = fieldAt(form, "Folder:", JPanel.class);
+        javax.swing.JTextField path = (javax.swing.JTextField) folderRow.getComponent(0);
+        assertEquals("(root) / A very long folder name / Another very long folder name"
+            + " / A third very long folder name", path.getText());
+        assertEquals(path.getText(), path.getToolTipText());
+        editor.validate();
+        assertFalse(scroll.getHorizontalScrollBar().isVisible());
+        assertTrue(folderRow.getX() + folderRow.getWidth() <= form.getWidth());
+      } finally {
+        editor.dispose();
+      }
+    });
+  }
+
   @Test
   void changingAuthenticationKeepsFieldsInsideDialogAndAtTop() throws Exception {
     Assumptions.assumeFalse(GraphicsEnvironment.isHeadless());

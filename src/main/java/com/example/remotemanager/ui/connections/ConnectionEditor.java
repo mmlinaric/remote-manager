@@ -70,7 +70,10 @@ public final class ConnectionEditor extends JDialog {
   private final JTextField host = new JTextField(26);
   private final JSpinner port = new JSpinner(new SpinnerNumberModel(22, 1, 65535, 1));
   private final JTextField user = new JTextField(26);
-  private final JComboBox<ConnectionFolder> folder = new JComboBox<>();
+  private final JTextField folderPath = new JTextField();
+  private final JPanel folderRow = new JPanel(new BorderLayout(4, 0));
+  private final List<ConnectionFolder> folders;
+  private ConnectionFolder selectedFolder;
   private final JComboBox<AuthenticationType> auth = new JComboBox<>(AuthenticationType.values());
   private final JComboBox<PasswordSource> sshSource = new JComboBox<>(PasswordSource.values());
   private final JPasswordField sshPassword = new JPasswordField(26);
@@ -102,19 +105,28 @@ public final class ConnectionEditor extends JDialog {
       Function<Submission, CompletableFuture<Void>> saveAction) {
     super(owner, current == null ? "New host" : "Edit host", ModalityType.APPLICATION_MODAL);
     this.saveAction = saveAction;
+    this.folders = List.copyOf(folders);
     this.availableIdentities = entries.stream().map(VaultEntry::id).collect(Collectors.toSet());
     credentials.forEach(entry -> credentialsById.put(entry.id(), entry));
     setLayout(new BorderLayout(8, 8));
-    folder.addItem(null);
-    folders.forEach(folder::addItem);
     sshCredential.addItem(null);
     sudoCredential.addItem(null);
     entries.forEach(entry -> { sshCredential.addItem(entry); sudoCredential.addItem(entry); });
-    folder.setRenderer(new OptionalRenderer("(root)"));
     sshCredential.setRenderer(new OptionalRenderer("Choose identity..."));
     sudoCredential.setRenderer(new OptionalRenderer("(none)"));
     shrinkToAvailableWidth(sshCredential);
     shrinkToAvailableWidth(sudoCredential);
+
+    folderPath.setEditable(false);
+    shrinkToAvailableWidth(folderPath);
+    folderRow.add(folderPath, BorderLayout.CENTER);
+    JButton chooseFolder = new JButton("Choose folder...", SilkIcons.FOLDER);
+    chooseFolder.addActionListener(event -> {
+      FolderPickerDialog.Selection choice = FolderPickerDialog.choose(this, this.folders,
+          this.selectedFolder == null ? null : this.selectedFolder.id());
+      if (choice != null) chooseFolder(choice.folderId());
+    });
+    folderRow.add(chooseFolder, BorderLayout.EAST);
 
     JButton createIdentity = new JButton("New identity...", SilkIcons.NEW_IDENTITY);
     createIdentity.addActionListener(event -> createIdentity(sshCredential));
@@ -150,7 +162,7 @@ public final class ConnectionEditor extends JDialog {
     addRow(form, row++, "Host address", host);
     addRow(form, row++, "Port", port);
     addRow(form, row++, "SSH username", user);
-    addRow(form, row++, "Folder", folder);
+    addRow(form, row++, "Folder", folderRow);
     addRow(form, row++, "Authentication", auth);
     sshSourceLabel = addRow(form, row++, "SSH password source", sshSource);
     sshPasswordLabel = addRow(form, row++, "SSH password", sshPassword);
@@ -269,7 +281,6 @@ public final class ConnectionEditor extends JDialog {
     char[] sshSecret = sshPassword.getPassword();
     char[] sudoSecret = sudoPassword.getPassword();
     try {
-      ConnectionFolder selectedFolder = (ConnectionFolder) folder.getSelectedItem();
       AuthenticationType selectedAuth = (AuthenticationType) auth.getSelectedItem();
       VaultEntry selectedSsh = (VaultEntry) sshCredential.getSelectedItem();
       VaultEntry selectedSudo = (VaultEntry) sudoCredential.getSelectedItem();
@@ -354,10 +365,11 @@ public final class ConnectionEditor extends JDialog {
   }
 
   private void chooseFolder(UUID id) {
-    for (int i = 0; i < folder.getItemCount(); i++) {
-      ConnectionFolder item = folder.getItemAt(i);
-      if (item == null ? id == null : item.id().equals(id)) { folder.setSelectedIndex(i); return; }
-    }
+    selectedFolder = folders.stream().filter(item -> item.id().equals(id)).findFirst().orElse(null);
+    String path = FolderPickerDialog.displayPath(folders, selectedFolder);
+    folderPath.setText(path);
+    folderPath.setCaretPosition(path.length());
+    folderPath.setToolTipText(path);
   }
 
   private void chooseEntry(JComboBox<VaultEntry> box, UUID id) {
