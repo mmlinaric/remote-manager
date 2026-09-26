@@ -17,6 +17,8 @@ import java.util.UUID;
 import javax.swing.JScrollPane;
 import javax.swing.SwingUtilities;
 import javax.swing.JTree;
+import javax.swing.JPanel;
+import javax.swing.JTextArea;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.TreePath;
 import org.junit.jupiter.api.Test;
@@ -138,6 +140,35 @@ class ConnectionTreePanelTest {
           List.of(), true)));
       assertEquals("identity missing", panel.issue(host));
       assertTrue(panel.hasSudoPassword(host));
+    });
+  }
+
+  @Test
+  void configurationAppearsOnlyForSelectedHosts() throws Exception {
+    SwingUtilities.invokeAndWait(() -> {
+      ConnectionTreePanel panel = new ConnectionTreePanel(new NoopActions());
+      ConnectionFolder folder = new ConnectionFolder(UUID.randomUUID(), null, "Servers", 0);
+      Connection host = new Connection(UUID.randomUUID(), "Server", "server.example", 22,
+          "admin", null, AuthenticationType.SSH_AGENT, null, null,
+          null, null, "", 0);
+      panel.showConnections(List.of(folder), List.of(host));
+      JTree tree = (JTree) ((JScrollPane) panel.getComponent(0)).getViewport().getView();
+      JPanel content = (JPanel) panel.details().getComponent(0);
+
+      tree.setSelectionRow(0);
+      assertFalse(content.getComponent(0).isVisible());
+      JTextArea prompt = (JTextArea) content.getComponent(1);
+      assertEquals("Select a host to view its configuration.",
+          prompt.getText());
+      assertTrue(prompt.getLineWrap());
+      assertTrue(prompt.getWrapStyleWord());
+
+      tree.setSelectionPath(pathFor(tree, folder.id()));
+      assertFalse(content.getComponent(0).isVisible());
+
+      panel.reveal(host.id());
+      assertTrue(content.getComponent(0).isVisible());
+      assertFalse(content.getComponent(1).isVisible());
     });
   }
 

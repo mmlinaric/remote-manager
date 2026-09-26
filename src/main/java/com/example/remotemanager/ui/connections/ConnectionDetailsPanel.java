@@ -2,18 +2,25 @@ package com.example.remotemanager.ui.connections;
 
 import com.example.remotemanager.model.Connection;
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.GridLayout;
+import javax.swing.BorderFactory;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JTextArea;
+import javax.swing.UIManager;
 
 /** Compact summary of the selected connection in the tree. */
 public final class ConnectionDetailsPanel extends JPanel {
-  private final JLabel name = new JLabel();
-  private final JLabel host = new JLabel();
-  private final JLabel user = new JLabel();
-  private final JLabel port = new JLabel();
-  private final JLabel authentication = new JLabel();
-  private final JLabel credential = new JLabel();
+  private final JLabel name = new JLabel("Name: ");
+  private final JLabel host = new JLabel("Host: ");
+  private final JLabel user = new JLabel("User: ");
+  private final JLabel port = new JLabel("Port: ");
+  private final JLabel authentication = new JLabel("Authentication: ");
+  private final JLabel credential = new JLabel("Credential: ");
+  private final CardLayout cards = new CardLayout();
+  private final JPanel content = new JPanel(cards);
+  private final JTextArea empty = new JTextArea("Select a host to view its configuration.", 3, 18);
 
   public ConnectionDetailsPanel() {
     super(new BorderLayout());
@@ -27,7 +34,17 @@ public final class ConnectionDetailsPanel extends JPanel {
     JPanel summary = new JPanel(new BorderLayout());
     summary.add(new JLabel("Configuration"), BorderLayout.NORTH);
     summary.add(values, BorderLayout.CENTER);
-    add(summary, BorderLayout.NORTH);
+    empty.setEditable(false);
+    empty.setFocusable(false);
+    empty.setOpaque(false);
+    empty.setLineWrap(true);
+    empty.setWrapStyleWord(true);
+    empty.setFont(UIManager.getFont("Label.font"));
+    empty.setForeground(UIManager.getColor("Label.foreground"));
+    empty.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
+    content.add(summary, "host");
+    content.add(empty, "empty");
+    add(content, BorderLayout.CENTER);
     showConnection(null);
   }
 
@@ -36,16 +53,14 @@ public final class ConnectionDetailsPanel extends JPanel {
   }
 
   public void showConnection(Connection connection, String issue) {
-    name.setText("Name: " + value(connection == null ? null : connection.name()));
-    host.setText("Host: " + value(connection == null ? null : connection.hostname()));
-    user.setText("User: " + value(connection == null ? null : connection.username()));
-    port.setText("Port: " + (connection == null ? "" : connection.port()));
-    authentication.setText("Authentication: " + (connection == null ? "" : connection.authenticationType()));
-    credential.setText("Credential: " + (connection == null ? "" : issue != null ? issue
+    cards.show(content, connection == null ? "empty" : "host");
+    if (connection == null) return;
+    name.setText("Name: " + connection.name());
+    host.setText("Host: " + connection.hostname());
+    user.setText("User: " + connection.username());
+    port.setText("Port: " + connection.port());
+    authentication.setText("Authentication: " + connection.authenticationType());
+    credential.setText("Credential: " + (issue != null ? issue
         : connection.sshCredentialEntryId() == null ? "No vault identity needed" : "Ready"));
-  }
-
-  private static String value(String text) {
-    return text == null ? "" : text;
   }
 }
