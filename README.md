@@ -22,6 +22,8 @@ On Windows, use `mvnw.cmd`. The app uses the system Swing look and feel. Native 
 
 The **Hosts** and **Identities** sidebar sections sit beside terminal tabs. The main workspace stays hidden until the vault is unlocked. Locking the vault disconnects sessions and clears the visible host and identity lists. Auto-lock is based on app activity, defaults to 30 minutes, and can be changed to 5, 15, 30 minutes, or Never in Settings.
 
+Click the close icon on a session tab to close that session. **Session → Close tab** closes the selected tab.
+
 ## Data and KeePass compatibility
 
 Hosts and folders are stored inside the selected KDBX file, together with identities. Hosts are KeePass entries in a marked “Remote Manager Hosts” group. Folders are nested KeePass groups. A host's name, address, username, authentication choice, identity references, key-file path, and notes are encrypted with the vault. New identities are saved in a separate “Remote Manager Identities” group. Existing non-host KeePass entries are available as identities. Entries have stable IDs, so renaming or moving an identity does not break its host reference.

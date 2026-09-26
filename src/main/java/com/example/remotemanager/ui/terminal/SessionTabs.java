@@ -9,6 +9,7 @@ import com.example.remotemanager.ui.settings.AppSettings;
 import com.example.remotemanager.util.SecureClipboard;
 import com.example.remotemanager.vault.Vault;
 import java.awt.Component;
+import java.awt.FlowLayout;
 import java.awt.Toolkit;
 import java.time.Duration;
 import java.util.HashMap;
@@ -20,9 +21,13 @@ import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
+import javax.swing.BorderFactory;
+import javax.swing.JButton;
 import javax.swing.Icon;
 import javax.swing.JComponent;
+import javax.swing.JLabel;
 import javax.swing.JOptionPane;
+import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
@@ -91,10 +96,11 @@ public final class SessionTabs extends JTabbedPane {
 
   public void closeSelected() {
     OpenTab tab = selectedTab();
-    if (tab == null) {
-      return;
-    }
-    tab.closed().set(true);
+    if (tab != null) closeTab(tab);
+  }
+
+  private void closeTab(OpenTab tab) {
+    if (tab.closed().getAndSet(true)) return;
     openTabs.remove(tab.session().component());
     remove(tab.session().component());
     worker.execute(tab.session()::disconnect);
@@ -206,6 +212,9 @@ public final class SessionTabs extends JTabbedPane {
     JComponent component = session.component();
     openTabs.put(component, tab);
     addTab(connection.name() + " (connecting)", SilkIcons.CONNECTING, component);
+    setTabComponentAt(indexOfComponent(component), new TabHeader(
+        connection.name() + " (connecting)", SilkIcons.CONNECTING,
+        () -> closeTab(tab), connection.name()));
     setSelectedComponent(component);
     worker.execute(
         () -> {
@@ -320,7 +329,8 @@ public final class SessionTabs extends JTabbedPane {
   private void updateTitle(OpenTab tab, String state) {
     int index = indexOfComponent(tab.session().component());
     if (index >= 0) {
-      setTitleAt(index, tab.connection().name() + " (" + state + ")");
+      String title = tab.connection().name() + " (" + state + ")";
+      setTitleAt(index, title);
       Icon icon =
           switch (state) {
             case "connected" -> SilkIcons.CONNECTED;
@@ -328,6 +338,31 @@ public final class SessionTabs extends JTabbedPane {
             default -> SilkIcons.DISCONNECTED;
           };
       setIconAt(index, icon);
+      if (getTabComponentAt(index) instanceof TabHeader header) header.update(title, icon);
+    }
+  }
+
+  private static final class TabHeader extends JPanel {
+    private final JLabel label;
+
+    TabHeader(String title, Icon icon, Runnable close, String connectionName) {
+      super(new FlowLayout(FlowLayout.LEFT, 4, 0));
+      setOpaque(false);
+      label = new JLabel(title, icon, JLabel.LEADING);
+      add(label);
+      JButton closeButton = new JButton(SilkIcons.CLOSE);
+      closeButton.setBorder(BorderFactory.createEmptyBorder(2, 2, 2, 2));
+      closeButton.setContentAreaFilled(false);
+      closeButton.setFocusable(false);
+      closeButton.setToolTipText("Close this session");
+      closeButton.getAccessibleContext().setAccessibleName("Close " + connectionName + " session");
+      closeButton.addActionListener(event -> close.run());
+      add(closeButton);
+    }
+
+    void update(String title, Icon icon) {
+      label.setText(title);
+      label.setIcon(icon);
     }
   }
 
