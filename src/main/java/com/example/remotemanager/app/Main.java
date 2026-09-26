@@ -2,7 +2,13 @@ package com.example.remotemanager.app;
 
 import com.example.remotemanager.persistence.SettingsRepository;
 import com.example.remotemanager.ui.main.MainWindow;
+import com.sun.jna.Memory;
+import com.sun.jna.Native;
+import com.sun.jna.Platform;
+import com.sun.jna.platform.unix.X11;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import javax.swing.ImageIcon;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
@@ -37,6 +43,34 @@ public final class Main {
     } catch (Exception error) {
       LOG.warn("Could not select the system look and feel", error);
     }
-    new MainWindow(settings).setVisible(true);
+    MainWindow window = new MainWindow(settings);
+    configureWindow(window);
+    window.setVisible(true);
+  }
+
+  private static void configureWindow(MainWindow window) {
+    window.setIconImage(new ImageIcon(Main.class.getResource("/icons/app/remote-manager.png")).getImage());
+
+    if (!Platform.isLinux()) return;
+    window.addNotify();
+    try {
+      X11 x11 = X11.INSTANCE;
+      X11.Display display = x11.XOpenDisplay(null);
+      if (display == null) return;
+      try {
+        // GNOME uses the X11 class as the app name when there is no desktop entry.
+        byte[] value = "remote-manager\0Remote Manager\0".getBytes(StandardCharsets.ISO_8859_1);
+        Memory data = new Memory(value.length);
+        data.write(0, value, 0, value.length);
+        x11.XChangeProperty(display, new X11.Window(Native.getWindowID(window)),
+            x11.XInternAtom(display, "WM_CLASS", false), X11.XA_STRING, 8,
+            X11.PropModeReplace, data, value.length);
+        x11.XSync(display, false);
+      } finally {
+        x11.XCloseDisplay(display);
+      }
+    } catch (RuntimeException | LinkageError error) {
+      LOG.warn("Could not set the Linux window app name", error);
+    }
   }
 }
