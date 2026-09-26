@@ -8,10 +8,12 @@ import com.example.remotemanager.ui.KeyFilePicker;
 import com.example.remotemanager.vault.VaultEntry;
 import com.example.remotemanager.vault.kdbx.KdbxVault;
 import java.awt.BorderLayout;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.Rectangle;
 import java.awt.Window;
 import java.util.List;
 import java.util.Arrays;
@@ -24,6 +26,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import javax.swing.JButton;
+import javax.swing.Box;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
@@ -32,6 +35,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JScrollPane;
+import javax.swing.Scrollable;
 import javax.swing.JSpinner;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
@@ -73,7 +77,7 @@ public final class ConnectionEditor extends JDialog {
   private final JPasswordField sudoPassword = new JPasswordField(26);
   private final JComboBox<VaultEntry> sudoCredential = new JComboBox<>();
   private final JComboBox<String> attachment = new JComboBox<>();
-  private final JTextField keyFile = new JTextField(26);
+  private final JTextField keyFile = new JTextField();
   private final JTextArea notes = new JTextArea(4, 26);
   private final JLabel hint = new JLabel(" ");
   private final JPanel credentialRow = new JPanel(new BorderLayout(4, 0));
@@ -107,6 +111,8 @@ public final class ConnectionEditor extends JDialog {
     folder.setRenderer(new OptionalRenderer("(root)"));
     sshCredential.setRenderer(new OptionalRenderer("Choose identity..."));
     sudoCredential.setRenderer(new OptionalRenderer("(none)"));
+    shrinkToAvailableWidth(sshCredential);
+    shrinkToAvailableWidth(sudoCredential);
 
     JButton createIdentity = new JButton("New identity...");
     createIdentity.addActionListener(event -> createIdentity(sshCredential));
@@ -126,8 +132,17 @@ public final class ConnectionEditor extends JDialog {
     });
     keyFileRow.add(keyFile, BorderLayout.CENTER);
     keyFileRow.add(browseKey, BorderLayout.EAST);
+    notes.setLineWrap(true);
+    notes.setWrapStyleWord(true);
+    JScrollPane notesScroll = new JScrollPane(notes);
+    Insets notesInsets = notes.getInsets();
+    Insets scrollInsets = notesScroll.getInsets();
+    int notesHeight = notes.getFontMetrics(notes.getFont()).getHeight() * notes.getRows()
+        + notesInsets.top + notesInsets.bottom + scrollInsets.top + scrollInsets.bottom;
+    notesScroll.setPreferredSize(new Dimension(0, notesHeight));
+    notesScroll.setMinimumSize(new Dimension(0, notesHeight));
 
-    JPanel form = new JPanel(new GridBagLayout());
+    JPanel form = new FormPanel();
     int row = 0;
     addRow(form, row++, "Name", name);
     addRow(form, row++, "Host address", host);
@@ -143,7 +158,14 @@ public final class ConnectionEditor extends JDialog {
     addRow(form, row++, "Sudo password source", sudoSource);
     sudoPasswordLabel = addRow(form, row++, "Sudo password", sudoPassword);
     sudoIdentityLabel = addRow(form, row++, "Sudo identity", sudoRow);
-    addRow(form, row, "Notes", new JScrollPane(notes));
+    addRow(form, row++, "Notes", notesScroll);
+    GridBagConstraints bottomSpace = new GridBagConstraints();
+    bottomSpace.gridx = 0;
+    bottomSpace.gridy = row;
+    bottomSpace.gridwidth = 2;
+    bottomSpace.weighty = 1;
+    bottomSpace.fill = GridBagConstraints.VERTICAL;
+    form.add(Box.createVerticalGlue(), bottomSpace);
     auth.addActionListener(event -> updateAuthFields());
     sshSource.addActionListener(event -> updateAuthFields());
     sudoSource.addActionListener(event -> updateAuthFields());
@@ -354,6 +376,24 @@ public final class ConnectionEditor extends JDialog {
   private static void rowVisible(JLabel label, JComponent field, boolean visible) {
     label.setVisible(visible);
     field.setVisible(visible);
+  }
+
+  private static void shrinkToAvailableWidth(JComponent field) {
+    field.setPreferredSize(new Dimension(0, field.getPreferredSize().height));
+  }
+
+  private static final class FormPanel extends JPanel implements Scrollable {
+    FormPanel() { super(new GridBagLayout()); }
+
+    @Override public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }
+    @Override public int getScrollableUnitIncrement(Rectangle visible, int orientation, int direction) {
+      return 24;
+    }
+    @Override public int getScrollableBlockIncrement(Rectangle visible, int orientation, int direction) {
+      return Math.max(24, visible.height - 24);
+    }
+    @Override public boolean getScrollableTracksViewportWidth() { return true; }
+    @Override public boolean getScrollableTracksViewportHeight() { return false; }
   }
 
   private static JLabel addRow(JPanel form, int index, String label, JComponent field) {
