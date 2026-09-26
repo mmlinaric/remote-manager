@@ -65,7 +65,7 @@ public final class ConnectionTreePanel extends JPanel {
               int row,
               boolean hasFocus) {
             super.getTreeCellRendererComponent(
-                tree, value, selected, expanded, leaf, row, hasFocus);
+                tree, value, selected, expanded, leaf, row, false);
             Object item = value instanceof DefaultMutableTreeNode node ? node.getUserObject() : value;
             setIcon(
                 item instanceof Connection connection
