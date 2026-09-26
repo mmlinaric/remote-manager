@@ -4,8 +4,9 @@ import com.example.remotemanager.model.Connection;
 import com.example.remotemanager.model.ConnectionFolder;
 import com.example.remotemanager.persistence.FolderExpansionPreferences;
 import com.example.remotemanager.persistence.SettingsRepository;
-import com.example.remotemanager.ui.SilkIcons;
 import com.example.remotemanager.ui.DialogEscape;
+import com.example.remotemanager.ui.SelectionColors;
+import com.example.remotemanager.ui.SilkIcons;
 import com.example.remotemanager.ui.connections.ConnectionEditor;
 import com.example.remotemanager.ui.connections.ConnectionTreePanel;
 import com.example.remotemanager.ui.settings.AppSettings;
@@ -359,10 +360,7 @@ public final class MainWindow extends JFrame {
     Color normalForeground = menu.getForeground();
     Color selectedBackground = UIManager.getColor("Menu.selectionBackground");
     if (selectedBackground != null) {
-      int brightness = (299 * selectedBackground.getRed()
-          + 587 * selectedBackground.getGreen()
-          + 114 * selectedBackground.getBlue()) / 1000;
-      Color selectedForeground = brightness < 150 ? Color.WHITE : Color.BLACK;
+      Color selectedForeground = SelectionColors.foregroundFor(selectedBackground);
       menu.addMenuListener(new MenuListener() {
         @Override public void menuSelected(MenuEvent event) {
           menu.setForeground(selectedForeground);

@@ -1,6 +1,7 @@
 package com.example.remotemanager.app;
 
 import com.example.remotemanager.persistence.SettingsRepository;
+import com.example.remotemanager.ui.SelectionColors;
 import com.example.remotemanager.ui.main.MainWindow;
 import com.sun.jna.Memory;
 import com.sun.jna.Native;
@@ -43,6 +44,7 @@ public final class Main {
     } catch (Exception error) {
       LOG.warn("Could not select the system look and feel", error);
     }
+    SelectionColors.configureTextInputs();
     MainWindow window = new MainWindow(settings);
     configureWindow(window);
     window.setVisible(true);
