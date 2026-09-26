@@ -16,6 +16,29 @@ public final class TerminalFonts {
 
   private TerminalFonts() {}
 
+  public static List<String> availableMonospacedFamilies() {
+    return AvailableFamilies.NAMES;
+  }
+
+  private static final class AvailableFamilies {
+    private static final List<String> NAMES = scanAvailableMonospacedFamilies();
+  }
+
+  private static List<String> scanAvailableMonospacedFamilies() {
+    BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+    Graphics2D graphics = image.createGraphics();
+    try {
+      return Arrays.stream(GraphicsEnvironment.getLocalGraphicsEnvironment()
+              .getAvailableFontFamilyNames())
+          .filter(name -> fitsCells(new Font(name, Font.PLAIN, 13), graphics))
+          .sorted(String.CASE_INSENSITIVE_ORDER)
+          .toList();
+    } finally {
+      graphics.dispose();
+      image.flush();
+    }
+  }
+
   public static Font resolve(String requestedName, int size) {
     BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
     Graphics2D graphics = image.createGraphics();

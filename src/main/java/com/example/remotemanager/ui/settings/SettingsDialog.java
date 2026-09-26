@@ -1,10 +1,12 @@
 package com.example.remotemanager.ui.settings;
 
+import com.example.remotemanager.ui.terminal.TerminalFonts;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.Window;
 import java.nio.file.Path;
+import java.util.List;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
@@ -17,7 +19,11 @@ public final class SettingsDialog {
   private SettingsDialog() {}
 
   public static AppSettings edit(Window owner, AppSettings current) {
-    JTextField font = new JTextField(current.terminalFont(), 24);
+    List<String> availableFonts = TerminalFonts.availableMonospacedFamilies();
+    String selectedFont = current.terminalFont();
+    if (!availableFonts.contains(selectedFont))
+      selectedFont = TerminalFonts.resolve(selectedFont, current.terminalFontSize()).getFamily();
+    FontPicker font = new FontPicker(availableFonts, selectedFont);
     JSpinner fontSize = spinner(current.terminalFontSize(), 6, 48);
     JSpinner scrollback = spinner(current.scrollbackLines(), 100, 100000);
     JSpinner clipboard = spinner(current.clipboardSeconds(), 5, 600);
@@ -46,12 +52,12 @@ public final class SettingsDialog {
         != JOptionPane.OK_OPTION) {
       return null;
     }
-    if (knownHosts.getText().isBlank() || font.getText().isBlank()) {
-      JOptionPane.showMessageDialog(owner, "Font and known hosts path are required");
+    if (knownHosts.getText().isBlank() || font.selectedFont() == null) {
+      JOptionPane.showMessageDialog(owner, "Choose a terminal font and enter a known hosts path");
       return null;
     }
     return new AppSettings(
-        font.getText().trim(),
+        font.selectedFont(),
         (Integer) fontSize.getValue(),
         (Integer) scrollback.getValue(),
         (Integer) clipboard.getValue(),
