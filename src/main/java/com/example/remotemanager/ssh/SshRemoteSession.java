@@ -3,6 +3,7 @@ package com.example.remotemanager.ssh;
 import com.example.remotemanager.connection.RemoteSession;
 import com.example.remotemanager.model.Connection;
 import com.example.remotemanager.ui.terminal.SshTtyConnector;
+import com.example.remotemanager.ui.terminal.TerminalFonts;
 import com.example.remotemanager.vault.Vault;
 import com.example.remotemanager.vault.VaultException;
 import com.hierynomus.sshj.userauth.agent.AgentProxy;
@@ -56,12 +57,13 @@ public final class SshRemoteSession implements RemoteSession {
     this.knownHosts = knownHosts;
     this.hostPrompt = hostPrompt;
     this.passphrasePrompt = passphrasePrompt;
+    Font terminalFont = TerminalFonts.resolve(fontName, fontSize);
     this.terminal =
         new JediTermWidget(
             new DefaultSettingsProvider() {
               @Override
               public Font getTerminalFont() {
-                return new Font(fontName, Font.PLAIN, fontSize);
+                return terminalFont;
               }
 
               @Override
