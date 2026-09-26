@@ -114,7 +114,7 @@ public final class MainWindow extends JFrame {
   private KdbxVault vault;
   private AppSettings preferences;
   private final SessionTabs tabs = new SessionTabs(() -> vault, this::sessionReady,
-      this::showStatus, () -> preferences);
+      this::showStatus, () -> preferences, this::currentHost);
   private final KeyEventDispatcher terminalFontKeys = this::dispatchTerminalFontKey;
   private final PropertyChangeListener buttonFocus = event -> {
     if (event.getNewValue() instanceof JButton button) button.setFocusPainted(false);
@@ -418,6 +418,12 @@ public final class MainWindow extends JFrame {
     if (exitMenuItem != null) exitMenuItem.setEnabled(!creatingVault);
     if (openWelcomeButton != null) openWelcomeButton.setEnabled(!creatingVault);
     if (createWelcomeButton != null) createWelcomeButton.setEnabled(!creatingVault);
+  }
+
+  private Connection currentHost(UUID id) {
+    return connectionTree.connections().stream()
+        .filter(host -> host.id().equals(id))
+        .findFirst().orElse(null);
   }
 
   private void setCreatingVault(boolean creating) {

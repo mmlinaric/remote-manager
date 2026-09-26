@@ -20,7 +20,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.UUID;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.Icon;
@@ -41,6 +43,7 @@ public final class SessionTabs extends JTabbedPane {
   private final Supplier<CompletableFuture<Boolean>> unlockVault;
   private final Consumer<String> status;
   private final Supplier<AppSettings> settings;
+  private final Function<UUID, Connection> currentConnection;
   private final SecureClipboard clipboard;
   private final java.util.concurrent.ExecutorService worker = Executors.newCachedThreadPool();
   private final java.util.concurrent.ScheduledExecutorService scheduler =
@@ -50,11 +53,13 @@ public final class SessionTabs extends JTabbedPane {
       Supplier<Vault> vaultSupplier,
       Supplier<CompletableFuture<Boolean>> unlockVault,
       Consumer<String> status,
-      Supplier<AppSettings> settings) {
+      Supplier<AppSettings> settings,
+      Function<UUID, Connection> currentConnection) {
     this.vaultSupplier = vaultSupplier;
     this.unlockVault = unlockVault;
     this.status = status;
     this.settings = settings;
+    this.currentConnection = currentConnection;
     clipboard = new SecureClipboard(Toolkit.getDefaultToolkit().getSystemClipboard(), scheduler);
   }
 
@@ -109,12 +114,12 @@ public final class SessionTabs extends JTabbedPane {
   public void copySudoPassword() {
     OpenTab tab = selectedTab();
     if (tab == null) return;
-    copySudoPassword(tab.connection(), () -> !tab.closed().get());
+    copySudoPassword(currentConnection.apply(tab.connection().id()), () -> !tab.closed().get());
   }
 
   public Connection selectedConnection() {
     OpenTab tab = selectedTab();
-    return tab == null ? null : tab.connection();
+    return tab == null ? null : currentConnection.apply(tab.connection().id());
   }
 
   public void changeFontSize(int change) {
