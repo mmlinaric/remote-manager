@@ -2,6 +2,8 @@ package com.example.remotemanager.ui.settings;
 
 import java.awt.BorderLayout;
 import java.awt.Dimension;
+import java.awt.EventQueue;
+import java.awt.Point;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -23,6 +25,8 @@ import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.event.PopupMenuEvent;
+import javax.swing.event.PopupMenuListener;
 
 /** A font dropdown with search inside its popup. */
 final class FontPicker extends JButton {
@@ -35,6 +39,8 @@ final class FontPicker extends JButton {
   private final JPopupMenu popup = new JPopupMenu();
   private final int rowHeight;
   private String selectedFont;
+  private boolean suppressButtonAction;
+  private long suppressedClickWhen;
 
   FontPicker(List<String> fonts, String selectedFont) {
     this.fonts = fonts;
@@ -87,7 +93,50 @@ final class FontPicker extends JButton {
         }
       }
     });
+    popup.addPopupMenuListener(new PopupMenuListener() {
+      @Override public void popupMenuWillBecomeVisible(PopupMenuEvent event) {}
+
+      @Override public void popupMenuWillBecomeInvisible(PopupMenuEvent event) {
+        if (EventQueue.getCurrentEvent() instanceof MouseEvent mouse
+            && (mouse.getID() == MouseEvent.MOUSE_PRESSED
+                || mouse.getID() == MouseEvent.MOUSE_RELEASED)) {
+          Point point = mouse.getComponent() == FontPicker.this
+              ? mouse.getPoint()
+              : new Point(mouse.getXOnScreen(), mouse.getYOnScreen());
+          if (mouse.getComponent() != FontPicker.this)
+            SwingUtilities.convertPointFromScreen(point, FontPicker.this);
+          if (contains(point)) {
+            suppressButtonAction = true;
+            suppressedClickWhen = mouse.getWhen();
+          }
+        }
+      }
+
+      @Override public void popupMenuCanceled(PopupMenuEvent event) {}
+    });
+    addMouseListener(new MouseAdapter() {
+      @Override public void mousePressed(MouseEvent event) {
+        if (suppressedClickWhen != event.getWhen()) suppressButtonAction = false;
+        if (popup.isVisible()) {
+          suppressButtonAction = true;
+          suppressedClickWhen = event.getWhen();
+          popup.setVisible(false);
+        }
+      }
+
+      @Override public void mouseReleased(MouseEvent event) {
+        SwingUtilities.invokeLater(() -> suppressButtonAction = false);
+      }
+    });
     addActionListener(event -> {
+      if (suppressButtonAction) {
+        suppressButtonAction = false;
+        return;
+      }
+      if (popup.isVisible()) {
+        popup.setVisible(false);
+        return;
+      }
       search.setText("");
       filter();
       popup.show(this, 0, getHeight());
