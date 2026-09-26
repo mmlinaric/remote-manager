@@ -52,7 +52,7 @@ public final class ConnectionTreePanel extends JPanel {
   public ConnectionTreePanel(Actions actions) {
     super(new BorderLayout());
     add(new JScrollPane(tree), BorderLayout.CENTER);
-    add(emptyHint, BorderLayout.SOUTH);
+    add(emptyHint, BorderLayout.NORTH);
     tree.setCellRenderer(
         new DefaultTreeCellRenderer() {
           @Override
