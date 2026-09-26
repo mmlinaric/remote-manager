@@ -17,7 +17,9 @@ import java.awt.AWTEvent;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Component;
+import java.awt.Container;
 import java.awt.Dimension;
+import java.awt.Dialog;
 import java.awt.FileDialog;
 import java.awt.Frame;
 import java.awt.FlowLayout;
@@ -54,6 +56,7 @@ import javax.swing.JButton;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.LayoutFocusTraversalPolicy;
 import javax.swing.JList;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
@@ -443,25 +446,8 @@ public final class MainWindow extends JFrame {
     KdbxVault selected = vault;
     if (selected == null) { openVault(); return; }
     if (!locked) return;
-    JPasswordField field = new JPasswordField(24);
-    JOptionPane prompt = new JOptionPane(field, JOptionPane.QUESTION_MESSAGE,
-        JOptionPane.OK_CANCEL_OPTION);
-    JDialog dialog = prompt.createDialog(this, "Unlock vault");
-    dialog.addWindowListener(new WindowAdapter() {
-      @Override public void windowOpened(WindowEvent event) {
-        SwingUtilities.invokeLater(() -> {
-          field.requestFocusInWindow();
-          field.selectAll();
-        });
-      }
-    });
-    dialog.setVisible(true);
-    dialog.dispose();
-    if (!Integer.valueOf(JOptionPane.OK_OPTION).equals(prompt.getValue())) {
-      field.setText("");
-      return;
-    }
-    char[] password = field.getPassword(); field.setText("");
+    char[] password = askVaultPassword();
+    if (password == null) return;
     long version = ++operationVersion;
     status.setText("Unlocking vault...");
     CompletableFuture.runAsync(() -> {
@@ -473,6 +459,47 @@ public final class MainWindow extends JFrame {
       if (error != null) { showError("Could not unlock vault", error); showLocked(); }
       else showWorkspace();
     }));
+  }
+
+  private char[] askVaultPassword() {
+    JPasswordField field = new JPasswordField(24);
+    JDialog dialog = new JDialog(this, "Unlock vault", Dialog.ModalityType.APPLICATION_MODAL);
+    JButton unlock = new JButton("Unlock", SilkIcons.UNLOCK);
+    JButton cancel = new JButton("Cancel", SilkIcons.CLOSE);
+    boolean[] accepted = {false};
+    unlock.addActionListener(event -> {
+      accepted[0] = true;
+      dialog.setVisible(false);
+    });
+    cancel.addActionListener(event -> dialog.setVisible(false));
+    field.addActionListener(event -> unlock.doClick());
+    JPanel content = new JPanel(new BorderLayout(0, 12));
+    content.setBorder(BorderFactory.createEmptyBorder(16, 18, 12, 18));
+    JPanel passwordRow = new JPanel(new BorderLayout(0, 6));
+    passwordRow.add(new JLabel("Vault password:"), BorderLayout.NORTH);
+    passwordRow.add(field, BorderLayout.CENTER);
+    content.add(passwordRow, BorderLayout.CENTER);
+    JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+    buttons.add(unlock);
+    buttons.add(cancel);
+    content.add(buttons, BorderLayout.SOUTH);
+    dialog.setContentPane(content);
+    dialog.getRootPane().setDefaultButton(unlock);
+    dialog.setFocusTraversalPolicy(new LayoutFocusTraversalPolicy() {
+      @Override public Component getDefaultComponent(Container container) {
+        return field;
+      }
+    });
+    dialog.pack();
+    dialog.setLocationRelativeTo(this);
+    try {
+      dialog.setVisible(true);
+      if (accepted[0]) return field.getPassword();
+      return null;
+    } finally {
+      field.setText("");
+      dialog.dispose();
+    }
   }
 
   private CompletableFuture<Boolean> sessionReady() {
