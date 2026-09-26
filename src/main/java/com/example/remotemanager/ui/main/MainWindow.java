@@ -477,29 +477,8 @@ public final class MainWindow extends JFrame {
     if (creatingVault) return;
     Path path = chooseVaultFile(FileDialog.SAVE);
     if (path == null) return;
-    JPasswordField first = new JPasswordField(24), second = new JPasswordField(24);
-    JPanel fields = new JPanel(new GridBagLayout());
-    GridBagConstraints label = new GridBagConstraints();
-    label.gridx = 0; label.anchor = GridBagConstraints.WEST;
-    label.insets = new Insets(0, 0, 6, 10);
-    fields.add(new JLabel("Master password:"), label);
-    label.gridy = 1; label.insets = new Insets(0, 0, 0, 10);
-    fields.add(new JLabel("Confirm password:"), label);
-    GridBagConstraints input = new GridBagConstraints();
-    input.gridx = 1; input.weightx = 1; input.fill = GridBagConstraints.HORIZONTAL;
-    input.insets = new Insets(0, 0, 6, 0);
-    fields.add(first, input);
-    input.gridy = 1; input.insets = new Insets(0, 0, 0, 0);
-    fields.add(second, input);
-    if (JOptionPane.showConfirmDialog(this, fields, "Create KeePass vault",
-        JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return;
-    char[] password = first.getPassword(), confirmation = second.getPassword();
-    first.setText(""); second.setText("");
-    if (password.length == 0 || !Arrays.equals(password, confirmation)) {
-      Arrays.fill(password, '\0'); Arrays.fill(confirmation, '\0');
-      JOptionPane.showMessageDialog(this, "Enter matching, non-empty passwords."); return;
-    }
-    Arrays.fill(confirmation, '\0');
+    char[] password = askNewVaultPassword();
+    if (password == null) return;
     lockVault();
     long version = operationVersion;
     creationProgress.setString("Creating " + path.getFileName() + "...");
@@ -526,6 +505,88 @@ public final class MainWindow extends JFrame {
         showWorkspace();
       } finally { setCreatingVault(false); }
     }));
+  }
+
+  private char[] askNewVaultPassword() {
+    JPasswordField first = new JPasswordField(24), second = new JPasswordField(24);
+    JDialog dialog = new JDialog(this, "Create KeePass vault", Dialog.ModalityType.APPLICATION_MODAL);
+    JButton create = new JButton("Create vault", SilkIcons.CREATE_VAULT);
+    JButton cancel = new JButton("Cancel", SilkIcons.CLOSE);
+    JLabel feedback = new JLabel();
+    feedback.setForeground(new Color(0xB0, 0x20, 0x20));
+    feedback.setVisible(false);
+    JPanel fields = new JPanel(new GridBagLayout());
+    GridBagConstraints label = new GridBagConstraints();
+    label.gridx = 0; label.anchor = GridBagConstraints.WEST;
+    label.insets = new Insets(0, 0, 6, 10);
+    fields.add(new JLabel("Master password:"), label);
+    label.gridy = 1; label.insets = new Insets(0, 0, 0, 10);
+    fields.add(new JLabel("Confirm password:"), label);
+    GridBagConstraints input = new GridBagConstraints();
+    input.gridx = 1; input.weightx = 1; input.fill = GridBagConstraints.HORIZONTAL;
+    input.insets = new Insets(0, 0, 6, 0);
+    fields.add(first, input);
+    input.gridy = 1; input.insets = new Insets(0, 0, 0, 0);
+    fields.add(second, input);
+    GridBagConstraints message = new GridBagConstraints();
+    message.gridx = 0; message.gridy = 2; message.gridwidth = 2;
+    message.anchor = GridBagConstraints.WEST;
+    message.insets = new Insets(8, 0, 0, 0);
+    fields.add(feedback, message);
+    char[][] accepted = {null};
+    create.addActionListener(event -> {
+      char[] password = first.getPassword();
+      char[] confirmation = second.getPassword();
+      try {
+        JPasswordField correction;
+        if (password.length == 0) {
+          feedback.setText("Enter a master password.");
+          correction = first;
+        } else if (confirmation.length == 0) {
+          feedback.setText("Confirm the master password.");
+          correction = second;
+        } else if (!Arrays.equals(password, confirmation)) {
+          feedback.setText("Passwords do not match. Try again.");
+          correction = second;
+        } else {
+          accepted[0] = password;
+          dialog.dispose();
+          return;
+        }
+        feedback.setVisible(true);
+        dialog.pack();
+        correction.requestFocusInWindow();
+        if (correction == second && confirmation.length > 0) second.selectAll();
+      } finally {
+        Arrays.fill(confirmation, '\0');
+        if (accepted[0] != password) Arrays.fill(password, '\0');
+      }
+    });
+    cancel.addActionListener(event -> dialog.dispose());
+    DialogEscape.bind(dialog, cancel);
+    JPanel content = new JPanel(new BorderLayout(0, 12));
+    content.setBorder(BorderFactory.createEmptyBorder(16, 18, 12, 18));
+    content.add(fields, BorderLayout.CENTER);
+    JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+    buttons.add(create);
+    buttons.add(cancel);
+    content.add(buttons, BorderLayout.SOUTH);
+    dialog.setContentPane(content);
+    dialog.getRootPane().setDefaultButton(create);
+    dialog.setFocusTraversalPolicy(new LayoutFocusTraversalPolicy() {
+      @Override public Component getDefaultComponent(Container container) {
+        return first;
+      }
+    });
+    dialog.pack();
+    dialog.setLocationRelativeTo(this);
+    try { dialog.setVisible(true); }
+    finally {
+      first.setText("");
+      second.setText("");
+      dialog.dispose();
+    }
+    return accepted[0];
   }
 
   private Path chooseVaultFile(int mode) {
