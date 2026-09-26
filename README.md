@@ -26,7 +26,7 @@ The **Hosts** and **Identities** sidebar sections sit beside terminal tabs. The 
 
 Hosts and folders are stored inside the selected KDBX file, together with identities. Hosts are KeePass entries in a marked “Remote Manager Hosts” group. Folders are nested KeePass groups. A host's name, address, username, authentication choice, identity references, key-file path, and notes are encrypted with the vault. New identities are saved in a separate “Remote Manager Identities” group. Existing non-host KeePass entries are available as identities. Entries are referenced by UUID, so renaming or moving an identity does not break its host reference.
 
-The only separate app data is `settings.properties` under the OS-specific Remote Manager data directory. It stores the selected vault path, window geometry, terminal preferences, known-hosts path, and auto-lock setting. It contains no host details or secrets. SQLite and Flyway are no longer used. Old `connections.db` files are not read.
+The only separate app data is `settings.properties` under the OS-specific Remote Manager data directory. It stores the selected vault path, window geometry, terminal preferences, known-hosts path, auto-lock setting, and open-folder display state for each vault. Folder state uses opaque IDs, without folder names. It contains no host details or secrets. SQLite and Flyway are no longer used. Old `connections.db` files are not read.
 
 Vault writes check for changes made by another application and reject a conflicting save. Reload the vault to see external edits. The app writes a temporary KDBX file and replaces the original only after checking that the new file can be opened. Keep normal backups of your vault.
 

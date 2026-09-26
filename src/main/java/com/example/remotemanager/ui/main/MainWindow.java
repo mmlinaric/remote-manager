@@ -2,6 +2,7 @@ package com.example.remotemanager.ui.main;
 
 import com.example.remotemanager.model.Connection;
 import com.example.remotemanager.model.ConnectionFolder;
+import com.example.remotemanager.persistence.FolderExpansionPreferences;
 import com.example.remotemanager.persistence.SettingsRepository;
 import com.example.remotemanager.ui.SilkIcons;
 import com.example.remotemanager.ui.connections.ConnectionEditor;
@@ -73,6 +74,7 @@ import javax.swing.Timer;
 /** Vault-first desktop workspace. All host and identity data comes from the unlocked KDBX file. */
 public final class MainWindow extends JFrame {
   private final SettingsRepository settings;
+  private final FolderExpansionPreferences folderExpansion;
   private final ExecutorService vaultWorker = Executors.newSingleThreadExecutor();
   private final JPanel cards = new JPanel(new CardLayout());
   private final JLabel vaultPath = new JLabel("No vault selected");
@@ -96,21 +98,30 @@ public final class MainWindow extends JFrame {
       this::showStatus, () -> preferences);
   private final ConnectionTreePanel connectionTree = new ConnectionTreePanel(new TreeActions());
   private final JSplitPane workspace;
+  private JSplitPane hosts;
   private final int initialSidebarWidth;
+  private final int initialDetailsHeight;
+  private int detailsHeight;
   private final Timer autoLock = new Timer(15000, event -> checkAutoLock());
   private final AWTEventListener activityListener = this::recordActivity;
   private boolean locked = true;
   private boolean sidebarWidthInitialized;
+  private boolean detailsHeightInitialized;
+  private boolean connectionsLoaded;
   private long operationVersion;
   private long lastActivity = System.nanoTime();
 
   public MainWindow(SettingsRepository settings) {
     super("Remote Manager");
     this.settings = settings;
+    this.folderExpansion = new FolderExpansionPreferences(settings);
     this.preferences = AppSettings.load(settings);
     int savedSidebarWidth = number("window.divider", 320);
     this.initialSidebarWidth = savedSidebarWidth < 190 ? 320 : savedSidebarWidth;
     this.workspace = createWorkspace();
+    int savedDetailsHeight = number("window.hostDetailsHeight", 0);
+    this.initialDetailsHeight = Math.max(savedDetailsHeight,
+        connectionTree.details().getPreferredSize().height);
     workspace.addComponentListener(new ComponentAdapter() {
       @Override public void componentResized(ComponentEvent event) { initializeSidebarWidth(); }
     });
@@ -189,8 +200,13 @@ public final class MainWindow extends JFrame {
   private JSplitPane createWorkspace() {
     JTabbedPane sidebar = new JTabbedPane();
     sidebar.setMinimumSize(new Dimension(190, 0));
-    JSplitPane hosts = new JSplitPane(JSplitPane.VERTICAL_SPLIT, connectionTree, connectionTree.details());
-    hosts.setResizeWeight(0.8); hosts.setDividerLocation(420);
+    hosts = new JSplitPane(JSplitPane.VERTICAL_SPLIT, connectionTree, connectionTree.details());
+    hosts.setContinuousLayout(true);
+    hosts.setResizeWeight(1.0);
+    hosts.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, event -> {
+      if (detailsHeightInitialized && hosts.isShowing() && hosts.getHeight() > 0)
+        detailsHeight = currentDetailsHeight();
+    });
     sidebar.addTab("Hosts", SilkIcons.CONNECTION, hosts);
     JPanel identityPanel = new JPanel(new BorderLayout());
     identities.setCellRenderer(new DefaultListCellRenderer() {
@@ -331,8 +347,11 @@ public final class MainWindow extends JFrame {
   private void showWorkspace() {
     locked = false;
     lastActivity = System.nanoTime();
+    connectionsLoaded = false;
+    connectionTree.restoreOnNextLoad(folderExpansion.load(vault.path()), "");
     ((CardLayout) cards.getLayout()).show(cards, "workspace");
     if (!sidebarWidthInitialized) SwingUtilities.invokeLater(this::initializeSidebarWidth);
+    if (!detailsHeightInitialized) SwingUtilities.invokeLater(this::initializeDetailsHeight);
     status.setText("Vault unlocked: " + vault.path());
     updateVaultState();
     updateActions();
@@ -345,6 +364,20 @@ public final class MainWindow extends JFrame {
         - workspace.getRightComponent().getMinimumSize().width;
     workspace.setDividerLocation(Math.min(initialSidebarWidth, Math.max(190, maxWidth)));
     sidebarWidthInitialized = true;
+  }
+
+  private void initializeDetailsHeight() {
+    if (detailsHeightInitialized || !hosts.isShowing()
+        || hosts.getHeight() <= hosts.getDividerSize()) return;
+    int available = hosts.getHeight() - hosts.getDividerSize();
+    int maxDetailsHeight = Math.max(0, available - connectionTree.getMinimumSize().height);
+    hosts.setDividerLocation(available - Math.min(initialDetailsHeight, maxDetailsHeight));
+    detailsHeight = currentDetailsHeight();
+    detailsHeightInitialized = true;
+  }
+
+  private int currentDetailsHeight() {
+    return Math.max(0, hosts.getHeight() - hosts.getDividerSize() - hosts.getDividerLocation());
   }
 
   private void openVault() {
@@ -448,10 +481,14 @@ public final class MainWindow extends JFrame {
 
   private void lockVault() {
     operationVersion++;
+    if (!locked && connectionsLoaded && vault != null) {
+      try { folderExpansion.save(vault.path(), connectionTree.expandedIds()); }
+      catch (Exception error) { showError("Could not save folder layout", error); }
+    }
+    connectionsLoaded = false;
     for (Window child : getOwnedWindows()) if (child.isVisible()) child.dispose();
     tabs.closeAll();
-    connectionTree.showConnections(List.of(), List.of());
-    connectionTree.details().showConnection(null);
+    connectionTree.clear();
     connectionTree.setIdentities(List.of());
     quickConnect.setText("");
     identities.setListData(new VaultEntry[0]);
@@ -480,6 +517,7 @@ public final class MainWindow extends JFrame {
       if (error != null) { showError("Could not read vault", error); return; }
       connectionTree.setIdentities(data.credentials());
       connectionTree.showConnections(data.folders(), data.connections());
+      connectionsLoaded = true;
       identities.setListData(data.identities().toArray(VaultEntry[]::new));
       identityHint.setText(data.identities().isEmpty()
           ? "  No identities yet. Create one here or while adding a host."
@@ -695,6 +733,10 @@ public final class MainWindow extends JFrame {
     }
     if (sidebarWidthInitialized)
       saveSetting("window.divider", Integer.toString(workspace.getDividerLocation()));
+    if (detailsHeightInitialized) {
+      if (hosts.isShowing()) detailsHeight = currentDetailsHeight();
+      saveSetting("window.hostDetailsHeight", Integer.toString(detailsHeight));
+    }
     lockVault();
     dispose();
   }

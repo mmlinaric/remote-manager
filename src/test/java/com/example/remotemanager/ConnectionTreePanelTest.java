@@ -12,7 +12,11 @@ import com.example.remotemanager.vault.VaultEntry;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import javax.swing.JScrollPane;
 import javax.swing.SwingUtilities;
+import javax.swing.JTree;
+import javax.swing.tree.DefaultMutableTreeNode;
+import javax.swing.tree.TreePath;
 import org.junit.jupiter.api.Test;
 
 class ConnectionTreePanelTest {
@@ -36,6 +40,51 @@ class ConnectionTreePanelTest {
           panel.expandAll();
           assertTrue(panel.expandedIds().contains(parent.id().toString()));
         });
+  }
+
+  @Test
+  void restoresExpandedChildInsideCollapsedParent() throws Exception {
+    SwingUtilities.invokeAndWait(() -> {
+      ConnectionTreePanel panel = new ConnectionTreePanel(new NoopActions());
+      ConnectionFolder parent = new ConnectionFolder(UUID.randomUUID(), null, "Parent", 0);
+      ConnectionFolder child = new ConnectionFolder(UUID.randomUUID(), parent.id(), "Child", 0);
+      ConnectionFolder grandchild = new ConnectionFolder(UUID.randomUUID(), child.id(), "Grandchild", 0);
+      List<ConnectionFolder> folders = List.of(parent, child, grandchild);
+      panel.showConnections(folders, List.of());
+
+      JTree tree = ((JTree) ((JScrollPane) panel.getComponent(1)).getViewport().getView());
+      tree.expandPath(pathFor(tree, child.id()));
+      tree.setSelectionPath(pathFor(tree, grandchild.id()));
+      tree.collapsePath(pathFor(tree, parent.id()));
+      String saved = panel.expandedIds();
+      assertTrue(saved.contains(child.id().toString()));
+      assertFalse(saved.contains(parent.id().toString()));
+
+      panel.showConnections(folders, List.of());
+      assertFalse(tree.isExpanded(pathFor(tree, parent.id())));
+      assertTrue(panel.expandedIds().contains(child.id().toString()));
+
+      panel.clear();
+      panel.restoreOnNextLoad(saved, "");
+      panel.showConnections(folders, List.of());
+      assertFalse(tree.isExpanded(pathFor(tree, parent.id())));
+      tree.expandPath(pathFor(tree, parent.id()));
+      assertTrue(tree.isExpanded(pathFor(tree, child.id())));
+
+      panel.collapseAll();
+      tree.expandPath(pathFor(tree, parent.id()));
+      assertFalse(tree.isExpanded(pathFor(tree, child.id())));
+    });
+  }
+
+  private static TreePath pathFor(JTree tree, UUID id) {
+    var nodes = ((DefaultMutableTreeNode) tree.getModel().getRoot()).depthFirstEnumeration();
+    while (nodes.hasMoreElements()) {
+      DefaultMutableTreeNode node = (DefaultMutableTreeNode) nodes.nextElement();
+      if (node.getUserObject() instanceof ConnectionFolder folder && folder.id().equals(id))
+        return new TreePath(node.getPath());
+    }
+    throw new AssertionError("Folder missing from tree: " + id);
   }
 
   @Test
