@@ -1103,7 +1103,9 @@ public final class MainWindow extends JFrame {
     }
     @Override public void edit(Connection host) { editHost(host, host.parentFolderId()); }
     @Override public void newFolder(ConnectionFolder parent) { MainWindow.this.newFolder(parent); }
-    @Override public void newConnection(ConnectionFolder parent) { editHost(null, parent.id()); }
+    @Override public void newConnection(ConnectionFolder parent) {
+      editHost(null, parent == null ? null : parent.id());
+    }
     @Override public void rename(ConnectionFolder folder) { MainWindow.this.renameFolder(folder); }
     @Override public void deleteFolder(ConnectionFolder folder) { deleteItem(folder); }
     @Override public void deleteConnection(Connection host) { deleteItem(host); }

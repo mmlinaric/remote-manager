@@ -128,31 +128,39 @@ public final class ConnectionTreePanel extends JPanel {
             }
             TreePath path = pathAtRow(event.getY());
             if (path == null) return;
-            Object item = ((DefaultMutableTreeNode) path.getLastPathComponent()).getUserObject();
-            JPopupMenu popup = new JPopupMenu();
-            if (item instanceof ConnectionFolder folder) {
-              popup.add(item("New subfolder", SilkIcons.NEW_FOLDER, () -> actions.newFolder(folder)));
-              popup.add(
-                  item("New connection", SilkIcons.NEW_CONNECTION, () -> actions.newConnection(folder)));
-              popup.addSeparator();
-              popup.add(item("Rename", SilkIcons.EDIT, () -> actions.rename(folder)));
-              popup.add(item("Delete", SilkIcons.DELETE, () -> actions.deleteFolder(folder)));
-            } else if (item instanceof Connection connection) {
-              popup.add(item("Open", SilkIcons.CONNECT, () -> actions.open(connection)));
-              JMenuItem copySudo = item("Copy sudo password", SilkIcons.COPY_PASSWORD,
-                  () -> actions.copySudoPassword(connection));
-              copySudo.setEnabled(hasSudoPassword(connection));
-              popup.add(copySudo);
-              popup.add(item("Edit", SilkIcons.EDIT, () -> actions.edit(connection)));
-              popup.addSeparator();
-              popup.add(item("Delete", SilkIcons.DELETE, () -> actions.deleteConnection(connection)));
-            } else {
-              return;
-            }
+            JPopupMenu popup = contextMenuFor((DefaultMutableTreeNode) path.getLastPathComponent(), actions);
+            if (popup == null) return;
             tree.setSelectionPath(path);
             popup.show(tree, event.getX(), event.getY());
           }
         });
+  }
+
+  JPopupMenu contextMenuFor(DefaultMutableTreeNode node, Actions actions) {
+    Object value = node.getUserObject();
+    JPopupMenu popup = new JPopupMenu();
+    if (node.isRoot()) {
+      popup.add(item("New folder", SilkIcons.NEW_FOLDER, () -> actions.newFolder(null)));
+      popup.add(item("New connection", SilkIcons.NEW_CONNECTION, () -> actions.newConnection(null)));
+    } else if (value instanceof ConnectionFolder folder) {
+      popup.add(item("New subfolder", SilkIcons.NEW_FOLDER, () -> actions.newFolder(folder)));
+      popup.add(item("New connection", SilkIcons.NEW_CONNECTION, () -> actions.newConnection(folder)));
+      popup.addSeparator();
+      popup.add(item("Rename", SilkIcons.EDIT, () -> actions.rename(folder)));
+      popup.add(item("Delete", SilkIcons.DELETE, () -> actions.deleteFolder(folder)));
+    } else if (value instanceof Connection connection) {
+      popup.add(item("Open", SilkIcons.CONNECT, () -> actions.open(connection)));
+      JMenuItem copySudo = item("Copy sudo password", SilkIcons.COPY_PASSWORD,
+          () -> actions.copySudoPassword(connection));
+      copySudo.setEnabled(hasSudoPassword(connection));
+      popup.add(copySudo);
+      popup.add(item("Edit", SilkIcons.EDIT, () -> actions.edit(connection)));
+      popup.addSeparator();
+      popup.add(item("Delete", SilkIcons.DELETE, () -> actions.deleteConnection(connection)));
+    } else {
+      return null;
+    }
+    return popup;
   }
 
   private TreePath pathAtRow(int y) {
