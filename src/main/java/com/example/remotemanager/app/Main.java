@@ -44,6 +44,14 @@ public final class Main {
     } catch (Exception error) {
       LOG.warn("Could not select the system look and feel", error);
     }
+    UIManager.put("MenuItem.margin", new java.awt.Insets(0, 2, 0, 2));
+    UIManager.put("MenuItem.checkIcon", new javax.swing.Icon() {
+      @Override public void paintIcon(java.awt.Component c, java.awt.Graphics g, int x, int y) {}
+      @Override public int getIconWidth() { return 0; }
+      @Override public int getIconHeight() { return 22; }
+    });
+    UIManager.put("MenuItem.afterCheckIconGap", 0);
+    UIManager.put("MenuItem.textIconGap", 1);
     SelectionColors.configureTextInputs();
     MainWindow window = new MainWindow(settings);
     configureWindow(window);
