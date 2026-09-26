@@ -6,6 +6,7 @@ import com.example.remotemanager.model.ConnectionFolder;
 import com.example.remotemanager.ui.vault.IdentityEditor;
 import com.example.remotemanager.ui.DialogEscape;
 import com.example.remotemanager.ui.KeyFilePicker;
+import com.example.remotemanager.ui.SilkIcons;
 import com.example.remotemanager.vault.VaultEntry;
 import com.example.remotemanager.vault.kdbx.KdbxVault;
 import java.awt.BorderLayout;
@@ -85,8 +86,8 @@ public final class ConnectionEditor extends JDialog {
   private final JPanel sudoRow = new JPanel(new BorderLayout(4, 0));
   private final JPanel attachmentRow = new JPanel(new BorderLayout());
   private final JPanel keyFileRow = new JPanel(new BorderLayout(4, 0));
-  private final JButton save = new JButton("Save host");
-  private final JButton cancel = new JButton("Cancel");
+  private final JButton save = new JButton("Save host", SilkIcons.SAVE);
+  private final JButton cancel = new JButton("Cancel", SilkIcons.CLOSE);
   private final Function<Submission, CompletableFuture<Void>> saveAction;
   private final Set<UUID> availableIdentities;
   private final Map<UUID, VaultEntry> credentialsById = new HashMap<>();
@@ -115,16 +116,16 @@ public final class ConnectionEditor extends JDialog {
     shrinkToAvailableWidth(sshCredential);
     shrinkToAvailableWidth(sudoCredential);
 
-    JButton createIdentity = new JButton("New identity...");
+    JButton createIdentity = new JButton("New identity...", SilkIcons.NEW_IDENTITY);
     createIdentity.addActionListener(event -> createIdentity(sshCredential));
     credentialRow.add(sshCredential, BorderLayout.CENTER);
     credentialRow.add(createIdentity, BorderLayout.EAST);
-    JButton createSudo = new JButton("New identity...");
+    JButton createSudo = new JButton("New identity...", SilkIcons.NEW_IDENTITY);
     createSudo.addActionListener(event -> createIdentity(sudoCredential));
     sudoRow.add(sudoCredential, BorderLayout.CENTER);
     sudoRow.add(createSudo, BorderLayout.EAST);
     attachmentRow.add(attachment, BorderLayout.CENTER);
-    JButton browseKey = new JButton("Browse...");
+    JButton browseKey = new JButton("Browse...", SilkIcons.OPEN_VAULT);
     browseKey.addActionListener(event -> {
       String currentPath = keyFile.getText().trim();
       java.nio.file.Path selected = KeyFilePicker.choose(this,

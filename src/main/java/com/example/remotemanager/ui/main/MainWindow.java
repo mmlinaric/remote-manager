@@ -183,11 +183,11 @@ public final class MainWindow extends JFrame {
     unlockWelcomeButton.addActionListener(event -> unlockVault());
     content.add(unlockWelcomeButton, c);
     c.gridx++;
-    JButton open = new JButton("Open vault...", SilkIcons.VAULT);
+    JButton open = new JButton("Open vault...", SilkIcons.OPEN_VAULT);
     open.addActionListener(event -> openVault());
     content.add(open, c);
     c.gridx++;
-    JButton create = new JButton("Create vault...", SilkIcons.NEW_CONNECTION);
+    JButton create = new JButton("Create vault...", SilkIcons.CREATE_VAULT);
     create.addActionListener(event -> createVault());
     content.add(create, c);
     outer.add(content);
@@ -198,7 +198,7 @@ public final class MainWindow extends JFrame {
     JPanel panel = new JPanel(new BorderLayout());
     JToolBar toolbar = new JToolBar(); toolbar.setFloatable(false);
     toolbar.add(vaultButton("New host", SilkIcons.NEW_CONNECTION, () -> editHost(null, null)));
-    toolbar.add(vaultButton("New identity", SilkIcons.VAULT, () -> editIdentity(null)));
+    toolbar.add(vaultButton("New identity", SilkIcons.NEW_IDENTITY, () -> editIdentity(null)));
     toolbar.addSeparator();
     toolbar.add(new JLabel("Host: "));
     toolbar.add(quickConnect);
@@ -244,7 +244,7 @@ public final class MainWindow extends JFrame {
     identityPanel.add(identityHint, BorderLayout.NORTH);
     identityPanel.add(new JScrollPane(identities), BorderLayout.CENTER);
     JPanel identityActions = new JPanel(new FlowLayout(FlowLayout.LEFT));
-    identityActions.add(button("New", SilkIcons.NEW_CONNECTION, () -> editIdentity(null)));
+    identityActions.add(button("New", SilkIcons.NEW_IDENTITY, () -> editIdentity(null)));
     identityActions.add(selectedIdentityButton("Edit", SilkIcons.EDIT, () -> editIdentity(identities.getSelectedValue())));
     identityActions.add(selectedIdentityButton("Delete", SilkIcons.DELETE, this::deleteIdentity));
     identityPanel.add(identityActions, BorderLayout.SOUTH);
@@ -272,46 +272,51 @@ public final class MainWindow extends JFrame {
   private JMenuBar menu() {
     JMenuBar bar = new JMenuBar();
     JMenu file = topMenu("File");
-    file.add(vaultItem("New host", () -> editHost(null, null)));
-    file.add(vaultItem("New folder", () -> newFolder(null)));
-    file.add(vaultItem("New identity", () -> editIdentity(null)));
+    file.add(vaultItem("New host", SilkIcons.NEW_CONNECTION, () -> editHost(null, null)));
+    file.add(vaultItem("New folder", SilkIcons.NEW_FOLDER, () -> newFolder(null)));
+    file.add(vaultItem("New identity", SilkIcons.NEW_IDENTITY, () -> editIdentity(null)));
     file.addSeparator();
-    file.add(item("Open vault...", this::openVault));
-    file.add(item("Create vault...", this::createVault));
-    unlockMenuItem = item("Unlock vault", this::unlockVault);
+    file.add(item("Open vault...", SilkIcons.OPEN_VAULT, this::openVault));
+    file.add(item("Create vault...", SilkIcons.CREATE_VAULT, this::createVault));
+    unlockMenuItem = item("Unlock vault", SilkIcons.UNLOCK, this::unlockVault);
     file.add(unlockMenuItem);
-    file.add(vaultItem("Lock vault", this::lockVault));
-    file.add(vaultItem("Reload vault", this::reloadVault));
-    file.addSeparator(); file.add(item("Exit", this::closeWindow));
+    file.add(vaultItem("Lock vault", SilkIcons.LOCK, this::lockVault));
+    file.add(vaultItem("Reload vault", SilkIcons.RECONNECT, this::reloadVault));
+    file.addSeparator(); file.add(item("Exit", SilkIcons.EXIT, this::closeWindow));
     bar.add(file);
     JMenu host = topMenu("Host");
-    connectSelectedItem = selectedHostItem("Connect selected", this::connectSelected);
+    connectSelectedItem = selectedHostItem("Connect selected", SilkIcons.CONNECT, this::connectSelected);
     host.add(connectSelectedItem);
-    host.add(selectedHostItem("Edit selected", this::editSelectedHost));
-    host.add(selectedHostItem("Delete selected", this::deleteSelectedHost));
+    host.add(selectedHostItem("Edit selected", SilkIcons.EDIT, this::editSelectedHost));
+    host.add(selectedHostItem("Delete selected", SilkIcons.DELETE, this::deleteSelectedHost));
     bar.add(host);
     JMenu session = topMenu("Session");
-    session.add(selectedSessionItem("Disconnect", tabs::disconnectSelected));
-    session.add(selectedSessionItem("Reconnect", tabs::reconnectSelected));
-    session.add(selectedSessionItem("Close tab", tabs::closeSelected));
+    session.add(selectedSessionItem("Disconnect", SilkIcons.DISCONNECT, tabs::disconnectSelected));
+    session.add(selectedSessionItem("Reconnect", SilkIcons.RECONNECT, tabs::reconnectSelected));
+    session.add(selectedSessionItem("Close tab", SilkIcons.CLOSE, tabs::closeSelected));
     session.addSeparator();
     int shortcut = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
-    JMenuItem increaseFont = selectedSessionItem("Increase font size", () -> tabs.changeFontSize(1));
+    JMenuItem increaseFont = selectedSessionItem("Increase font size", SilkIcons.FONT_INCREASE,
+        () -> tabs.changeFontSize(1));
     increaseFont.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_EQUALS, shortcut));
     session.add(increaseFont);
-    JMenuItem decreaseFont = selectedSessionItem("Decrease font size", () -> tabs.changeFontSize(-1));
+    JMenuItem decreaseFont = selectedSessionItem("Decrease font size", SilkIcons.FONT_DECREASE,
+        () -> tabs.changeFontSize(-1));
     decreaseFont.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, shortcut));
     session.add(decreaseFont);
-    JMenuItem resetFont = selectedSessionItem("Reset font size", tabs::resetFontSize);
+    JMenuItem resetFont = selectedSessionItem("Reset font size", SilkIcons.FONT, tabs::resetFontSize);
     resetFont.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_0, shortcut));
     session.add(resetFont);
     session.addSeparator();
-    copySudoSessionItem = selectedSessionItem("Copy sudo password", tabs::copySudoPassword);
+    copySudoSessionItem = selectedSessionItem("Copy sudo password", SilkIcons.COPY_PASSWORD,
+        tabs::copySudoPassword);
     session.add(copySudoSessionItem);
     bar.add(session);
-    JMenu tools = topMenu("Tools"); tools.add(item("Settings", this::editSettings)); bar.add(tools);
+    JMenu tools = topMenu("Tools");
+    tools.add(item("Settings", SilkIcons.SETTINGS, this::editSettings));
+    bar.add(tools);
     JMenu help = topMenu("Help");
-    help.add(item("About", () -> JOptionPane.showMessageDialog(this,
+    help.add(item("About", SilkIcons.ABOUT, () -> JOptionPane.showMessageDialog(this,
         "Remote Manager\nSSH hosts and identities in a KeePass vault.\nIcons: FamFamFam Silk by Mark James (CC BY 2.5).",
         "About Remote Manager", JOptionPane.INFORMATION_MESSAGE)));
     bar.add(help);
@@ -345,8 +350,10 @@ public final class MainWindow extends JFrame {
     }
     return menu;
   }
-  private static JMenuItem item(String title, Runnable action) {
-    JMenuItem item = new JMenuItem(title); item.addActionListener(event -> action.run()); return item;
+  private static JMenuItem item(String title, javax.swing.Icon icon, Runnable action) {
+    JMenuItem item = new JMenuItem(title, icon);
+    item.addActionListener(event -> action.run());
+    return item;
   }
 
   private JButton vaultButton(String title, javax.swing.Icon icon, Runnable action) {
@@ -355,14 +362,14 @@ public final class MainWindow extends JFrame {
   private JButton selectedIdentityButton(String title, javax.swing.Icon icon, Runnable action) {
     JButton button = button(title, icon, action); identityActions.add(button); return button;
   }
-  private JMenuItem vaultItem(String title, Runnable action) {
-    JMenuItem item = item(title, action); vaultActions.add(item); return item;
+  private JMenuItem vaultItem(String title, javax.swing.Icon icon, Runnable action) {
+    JMenuItem item = item(title, icon, action); vaultActions.add(item); return item;
   }
-  private JMenuItem selectedHostItem(String title, Runnable action) {
-    JMenuItem item = item(title, action); hostActions.add(item); return item;
+  private JMenuItem selectedHostItem(String title, javax.swing.Icon icon, Runnable action) {
+    JMenuItem item = item(title, icon, action); hostActions.add(item); return item;
   }
-  private JMenuItem selectedSessionItem(String title, Runnable action) {
-    JMenuItem item = item(title, action); sessionActions.add(item); return item;
+  private JMenuItem selectedSessionItem(String title, javax.swing.Icon icon, Runnable action) {
+    JMenuItem item = item(title, icon, action); sessionActions.add(item); return item;
   }
 
   private void updateActions() {

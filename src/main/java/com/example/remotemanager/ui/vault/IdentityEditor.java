@@ -3,6 +3,7 @@ package com.example.remotemanager.ui.vault;
 import com.example.remotemanager.vault.VaultEntry;
 import com.example.remotemanager.ui.KeyFilePicker;
 import com.example.remotemanager.ui.DialogEscape;
+import com.example.remotemanager.ui.SilkIcons;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -47,7 +48,7 @@ public final class IdentityEditor {
     row(form, 1, "Username", user);
     row(form, 2, current == null ? "Password or key passphrase" : "New password (blank keeps current)", password);
     row(form, 3, "Private key attachment", attachment);
-    JButton choose = new JButton("Choose key file...");
+    JButton choose = new JButton("Choose key file...", SilkIcons.OPEN_VAULT);
     choose.addActionListener(event -> {
       Path selected = KeyFilePicker.choose(dialog, safePath(attachment.getText()));
       if (selected != null) {
@@ -57,8 +58,8 @@ public final class IdentityEditor {
     GridBagConstraints place = new GridBagConstraints();
     place.gridx = 1; place.gridy = 4; place.anchor = GridBagConstraints.WEST;
     form.add(choose, place);
-    JButton save = new JButton("Save identity");
-    JButton cancel = new JButton("Cancel");
+    JButton save = new JButton("Save identity", SilkIcons.SAVE);
+    JButton cancel = new JButton("Cancel", SilkIcons.CLOSE);
     save.addActionListener(event -> {
       if (title.getText().isBlank()) {
         JOptionPane.showMessageDialog(dialog, "Enter an identity name.");
@@ -116,7 +117,7 @@ public final class IdentityEditor {
     row(form, 1, "Username", user);
     row(form, 2, current == null ? "Password or key passphrase" : "New password (blank keeps current)", password);
     row(form, 3, "Private key attachment", attachment);
-    JButton choose = new JButton("Choose key file...");
+    JButton choose = new JButton("Choose key file...", SilkIcons.OPEN_VAULT);
     choose.addActionListener(event -> {
       Path selected = KeyFilePicker.choose(SwingUtilities.getWindowAncestor(form), safePath(attachment.getText()));
       if (selected != null) {
@@ -129,10 +130,7 @@ public final class IdentityEditor {
     place.anchor = GridBagConstraints.WEST;
     form.add(choose, place);
     while (true) {
-      int answer = JOptionPane.showConfirmDialog(owner, form,
-          current == null ? "New identity" : "Edit identity",
-          JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-      if (answer != JOptionPane.OK_OPTION) {
+      if (!confirmIdentity(owner, form, current == null ? "New identity" : "Edit identity")) {
         password.setText("");
         return null;
       }
@@ -154,6 +152,27 @@ public final class IdentityEditor {
       }
       JOptionPane.showMessageDialog(owner, "Enter an identity name.", "Identity", JOptionPane.WARNING_MESSAGE);
     }
+  }
+
+  private static boolean confirmIdentity(Window owner, JPanel form, String title) {
+    JDialog dialog = new JDialog(owner, title, java.awt.Dialog.ModalityType.APPLICATION_MODAL);
+    JButton save = new JButton("Save identity", SilkIcons.SAVE);
+    JButton cancel = new JButton("Cancel", SilkIcons.CLOSE);
+    boolean[] accepted = {false};
+    save.addActionListener(event -> { accepted[0] = true; dialog.dispose(); });
+    cancel.addActionListener(event -> dialog.dispose());
+    DialogEscape.bind(dialog, cancel);
+    JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+    buttons.add(save);
+    buttons.add(cancel);
+    dialog.add(form, BorderLayout.CENTER);
+    dialog.add(buttons, BorderLayout.SOUTH);
+    dialog.getRootPane().setDefaultButton(save);
+    dialog.pack();
+    dialog.setLocationRelativeTo(owner);
+    try { dialog.setVisible(true); }
+    finally { dialog.dispose(); }
+    return accepted[0];
   }
 
   private static void row(JPanel panel, int index, String label, java.awt.Component field) {
