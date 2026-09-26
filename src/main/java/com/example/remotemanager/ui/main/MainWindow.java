@@ -487,32 +487,67 @@ public final class MainWindow extends JFrame {
     KdbxVault selected = vault;
     if (selected == null) { openVault(); return; }
     if (!locked) return;
-    char[] password = askVaultPassword();
-    if (password == null) return;
-    long version = ++operationVersion;
-    status.setText("Unlocking vault...");
-    CompletableFuture.runAsync(() -> {
-      try { selected.unlock(password); }
-      catch (Exception error) { throw new RuntimeException(error); }
-      finally { Arrays.fill(password, '\0'); }
-    }, vaultWorker).whenComplete((ignored, error) -> SwingUtilities.invokeLater(() -> {
-      if (version != operationVersion || vault != selected) { selected.lock(); return; }
-      if (error != null) { showError("Could not unlock vault", error); showLocked(); }
-      else showWorkspace();
-    }));
+    showUnlockDialog(selected);
   }
 
-  private char[] askVaultPassword() {
+  private void showUnlockDialog(KdbxVault selected) {
     JPasswordField field = new JPasswordField(24);
     JDialog dialog = new JDialog(this, "Unlock vault", Dialog.ModalityType.APPLICATION_MODAL);
     JButton unlock = new JButton("Unlock", SilkIcons.UNLOCK);
     JButton cancel = new JButton("Cancel", SilkIcons.CLOSE);
-    boolean[] accepted = {false};
+    JLabel feedback = new JLabel();
+    feedback.setVisible(false);
+    dialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
     unlock.addActionListener(event -> {
-      accepted[0] = true;
-      dialog.setVisible(false);
+      char[] password = field.getPassword();
+      if (password.length == 0) {
+        feedback.setForeground(new Color(0xB0, 0x20, 0x20));
+        feedback.setText("Enter your vault password.");
+        feedback.setVisible(true);
+        dialog.pack();
+        field.requestFocusInWindow();
+        return;
+      }
+      field.setText("");
+      field.setEnabled(false);
+      unlock.setEnabled(false);
+      cancel.setEnabled(false);
+      feedback.setForeground(UIManager.getColor("Label.foreground"));
+      feedback.setText("Unlocking vault...");
+      feedback.setVisible(true);
+      dialog.pack();
+      long version = ++operationVersion;
+      status.setText("Unlocking vault...");
+      CompletableFuture.runAsync(() -> {
+        try { selected.unlock(password); }
+        catch (Exception error) { throw new RuntimeException(error); }
+        finally { Arrays.fill(password, '\0'); }
+      }, vaultWorker).whenComplete((ignored, error) -> SwingUtilities.invokeLater(() -> {
+        if (version != operationVersion || vault != selected || !dialog.isDisplayable()) {
+          selected.lock();
+          return;
+        }
+        if (error == null) {
+          dialog.dispose();
+          showWorkspace();
+          return;
+        }
+        showLocked();
+        feedback.setForeground(new Color(0xB0, 0x20, 0x20));
+        feedback.setText(unlockFailureMessage(error));
+        dialog.pack();
+        field.setEnabled(true);
+        unlock.setEnabled(true);
+        cancel.setEnabled(true);
+        field.requestFocusInWindow();
+      }));
     });
-    cancel.addActionListener(event -> dialog.setVisible(false));
+    cancel.addActionListener(event -> dialog.dispose());
+    dialog.addWindowListener(new WindowAdapter() {
+      @Override public void windowClosing(WindowEvent event) {
+        if (cancel.isEnabled()) cancel.doClick();
+      }
+    });
     DialogEscape.bind(dialog, cancel);
     field.addActionListener(event -> unlock.doClick());
     JPanel content = new JPanel(new BorderLayout(0, 12));
@@ -520,6 +555,7 @@ public final class MainWindow extends JFrame {
     JPanel passwordRow = new JPanel(new BorderLayout(0, 6));
     passwordRow.add(new JLabel("Vault password:"), BorderLayout.NORTH);
     passwordRow.add(field, BorderLayout.CENTER);
+    passwordRow.add(feedback, BorderLayout.SOUTH);
     content.add(passwordRow, BorderLayout.CENTER);
     JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
     buttons.add(unlock);
@@ -534,14 +570,19 @@ public final class MainWindow extends JFrame {
     });
     dialog.pack();
     dialog.setLocationRelativeTo(this);
-    try {
-      dialog.setVisible(true);
-      if (accepted[0]) return field.getPassword();
-      return null;
-    } finally {
+    try { dialog.setVisible(true); }
+    finally {
       field.setText("");
       dialog.dispose();
     }
+  }
+
+  private static String unlockFailureMessage(Throwable error) {
+    for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+      if ("Header HMAC does not match".equals(cause.getMessage()))
+        return "Incorrect password. Try again.";
+    }
+    return "Could not unlock vault. Check the vault file and try again.";
   }
 
   private CompletableFuture<Boolean> sessionReady() {
