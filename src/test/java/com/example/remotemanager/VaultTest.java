@@ -8,6 +8,7 @@ import com.example.remotemanager.model.Connection;
 import com.example.remotemanager.model.ConnectionFolder;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -16,6 +17,36 @@ import org.junit.jupiter.api.io.TempDir;
 
 class VaultTest {
   @TempDir Path temp;
+
+  @Test
+  void opensAndPreservesCommonKeePassXcVault() throws Exception {
+    Path file = temp.resolve("keepassxc.kdbx");
+    try (var fixture = getClass().getResourceAsStream("/keepassxc-v4.fixture")) {
+      assertNotNull(fixture);
+      Files.copy(fixture, file, StandardCopyOption.REPLACE_EXISTING);
+    }
+    char[] master = "test-master".toCharArray();
+    KdbxVault vault = new KdbxVault(file);
+    vault.unlock(master);
+    var external = vault.entries().getFirst();
+    assertEquals("External identity", external.title());
+    assertEquals("alice", external.username());
+    assertArrayEquals("passphrase".toCharArray(), vault.getPassword(external.id()).orElseThrow());
+    assertArrayEquals("test-key-data".getBytes(),
+        vault.getAttachment(external.id(), "id_ed25519").orElseThrow());
+
+    vault.addEntry("App identity", "bob", "new secret".toCharArray(), Map.of(), null, null);
+    vault.save();
+    vault.save();
+    vault.lock();
+    vault.unlock(master);
+    assertEquals(2, vault.entries().size());
+    assertEquals(external.id(), vault.entries().stream()
+        .filter(entry -> entry.title().equals("External identity")).findFirst().orElseThrow().id());
+    assertArrayEquals("passphrase".toCharArray(), vault.getPassword(external.id()).orElseThrow());
+    assertArrayEquals("test-key-data".getBytes(),
+        vault.getAttachment(external.id(), "id_ed25519").orElseThrow());
+  }
 
   @Test
   void createsWritesAndReadsEntryByUuid() throws Exception {
@@ -72,8 +103,9 @@ class VaultTest {
     vault.unlock(master);
     UUID identity = vault.addEntry("SSH password", "alice", "secret".toCharArray(),
         Map.of(), null, null);
-    ConnectionFolder folder = new ConnectionFolder(UUID.randomUUID(), null, "Production", 0);
-    vault.putFolder(folder);
+    ConnectionFolder folder = new ConnectionFolder(vault.createFolder(null, "Production"), null, "Production", 0);
+    vault.renameFolder(folder.id(), "Production renamed");
+    ConnectionFolder renamedFolder = new ConnectionFolder(folder.id(), null, "Production renamed", 0);
     Connection host = new Connection(UUID.randomUUID(), "Web", "web.example.org", 2222,
         "alice", folder.id(), AuthenticationType.PASSWORD, identity, null, null, null,
         "Important host", 0);
@@ -89,7 +121,7 @@ class VaultTest {
     assertThrows(com.example.remotemanager.vault.VaultException.class, vault::connections);
 
     vault.unlock(master);
-    assertEquals(List.of(folder), vault.folders());
+    assertEquals(List.of(renamedFolder), vault.folders());
     assertTrue(vault.connections().contains(host));
     assertEquals(identity, vault.entries().getFirst().id());
 

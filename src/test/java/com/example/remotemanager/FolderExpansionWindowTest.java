@@ -35,10 +35,8 @@ class FolderExpansionWindowTest {
     KdbxVault.create(vaultFile, password);
     KdbxVault firstVault = new KdbxVault(vaultFile);
     firstVault.unlock(password);
-    ConnectionFolder parent = new ConnectionFolder(UUID.randomUUID(), null, "Parent", 0);
-    ConnectionFolder child = new ConnectionFolder(UUID.randomUUID(), parent.id(), "Child", 0);
-    firstVault.putFolder(parent);
-    firstVault.putFolder(child);
+    ConnectionFolder parent = new ConnectionFolder(firstVault.createFolder(null, "Parent"), null, "Parent", 0);
+    firstVault.createFolder(parent.id(), "Child");
     firstVault.save();
 
     Path settingsFile = temp.resolve("settings.properties");

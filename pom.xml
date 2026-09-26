@@ -15,16 +15,12 @@
             <id>jetbrains</id>
             <url>https://cache-redirector.jetbrains.com/intellij-dependencies</url>
         </repository>
-        <repository>
-            <id>soderer</id>
-            <url>https://soderer.de/maven2</url>
-        </repository>
     </repositories>
     <dependencies>
         <dependency><groupId>com.hierynomus</groupId><artifactId>sshj</artifactId><version>0.41.1</version></dependency>
         <dependency><groupId>org.jetbrains.jediterm</groupId><artifactId>jediterm-ui</artifactId><version>3.66</version></dependency>
         <dependency><groupId>org.jetbrains.jediterm</groupId><artifactId>jediterm-core</artifactId><version>3.66</version></dependency>
-        <dependency><groupId>de.soderer</groupId><artifactId>kdbx</artifactId><version>26.1.1</version></dependency>
+        <dependency><groupId>org.linguafranca.pwdb</groupId><artifactId>KeePassJava2-jackson</artifactId><version>2.2.4</version></dependency>
         <dependency><groupId>net.java.dev.jna</groupId><artifactId>jna</artifactId><version>5.18.1</version></dependency>
         <dependency><groupId>net.java.dev.jna</groupId><artifactId>jna-platform</artifactId><version>5.18.1</version></dependency>
         <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId><version>2.0.17</version></dependency>

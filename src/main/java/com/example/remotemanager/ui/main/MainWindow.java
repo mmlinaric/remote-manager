@@ -664,15 +664,15 @@ public final class MainWindow extends JFrame {
     if (locked) return;
     String name = JOptionPane.showInputDialog(this, "Folder name:");
     if (name == null || name.isBlank()) return;
-    ConnectionFolder folder = new ConnectionFolder(UUID.randomUUID(), parent == null ? null : parent.id(), name.trim(), 0);
-    mutate(v -> v.putFolder(folder), folder.id()).exceptionally(error -> { showErrorLater("Could not save folder", error); return null; });
+    mutate(v -> v.createFolder(parent == null ? null : parent.id(), name.trim()), null)
+        .exceptionally(error -> { showErrorLater("Could not save folder", error); return null; });
   }
 
   private void renameFolder(ConnectionFolder folder) {
     String name = JOptionPane.showInputDialog(this, "Folder name:", folder.name());
     if (name == null || name.isBlank()) return;
-    ConnectionFolder updated = new ConnectionFolder(folder.id(), folder.parentFolderId(), name.trim(), folder.sortOrder());
-    mutate(v -> v.putFolder(updated), folder.id()).exceptionally(error -> { showErrorLater("Could not rename folder", error); return null; });
+    mutate(v -> v.renameFolder(folder.id(), name.trim()), folder.id())
+        .exceptionally(error -> { showErrorLater("Could not rename folder", error); return null; });
   }
 
   private void deleteItem(Object selected) {
