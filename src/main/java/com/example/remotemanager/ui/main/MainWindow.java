@@ -40,6 +40,7 @@ import java.awt.Window;
 import java.awt.event.AWTEventListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.beans.PropertyChangeListener;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -114,6 +115,9 @@ public final class MainWindow extends JFrame {
   private final SessionTabs tabs = new SessionTabs(() -> vault, this::sessionReady,
       this::showStatus, () -> preferences);
   private final KeyEventDispatcher terminalFontKeys = this::dispatchTerminalFontKey;
+  private final PropertyChangeListener buttonFocus = event -> {
+    if (event.getNewValue() instanceof JButton button) button.setFocusPainted(false);
+  };
   private final ConnectionTreePanel connectionTree = new ConnectionTreePanel(new TreeActions());
   private final JSplitPane workspace;
   private JSplitPane hosts;
@@ -158,6 +162,8 @@ public final class MainWindow extends JFrame {
     installSudoShortcut();
     KeyboardFocusManager.getCurrentKeyboardFocusManager()
         .addKeyEventDispatcher(terminalFontKeys);
+    KeyboardFocusManager.getCurrentKeyboardFocusManager()
+        .addPropertyChangeListener("focusOwner", buttonFocus);
     cards.add(welcome(), "locked");
     cards.add(workspacePanel(), "workspace");
     add(cards, BorderLayout.CENTER);
@@ -1005,6 +1011,8 @@ public final class MainWindow extends JFrame {
     Toolkit.getDefaultToolkit().removeAWTEventListener(activityListener);
     KeyboardFocusManager.getCurrentKeyboardFocusManager()
         .removeKeyEventDispatcher(terminalFontKeys);
+    KeyboardFocusManager.getCurrentKeyboardFocusManager()
+        .removePropertyChangeListener("focusOwner", buttonFocus);
     tabs.shutdown();
     if (vault != null) vaultWorker.execute(vault::lock);
     vaultWorker.shutdown();
