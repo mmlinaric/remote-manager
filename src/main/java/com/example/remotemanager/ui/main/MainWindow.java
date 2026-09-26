@@ -27,6 +27,8 @@ import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.KeyEventDispatcher;
+import java.awt.KeyboardFocusManager;
 import java.awt.event.ActionEvent;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
@@ -103,6 +105,7 @@ public final class MainWindow extends JFrame {
   private AppSettings preferences;
   private final SessionTabs tabs = new SessionTabs(() -> vault, this::sessionReady,
       this::showStatus, () -> preferences);
+  private final KeyEventDispatcher terminalFontKeys = this::dispatchTerminalFontKey;
   private final ConnectionTreePanel connectionTree = new ConnectionTreePanel(new TreeActions());
   private final JSplitPane workspace;
   private JSplitPane hosts;
@@ -144,6 +147,8 @@ public final class MainWindow extends JFrame {
     setExtendedState(Frame.MAXIMIZED_BOTH);
     setJMenuBar(menu());
     installSudoShortcut();
+    KeyboardFocusManager.getCurrentKeyboardFocusManager()
+        .addKeyEventDispatcher(terminalFontKeys);
     cards.add(welcome(), "locked");
     cards.add(workspacePanel(), "workspace");
     add(cards, BorderLayout.CENTER);
@@ -288,6 +293,18 @@ public final class MainWindow extends JFrame {
     session.add(selectedSessionItem("Disconnect", tabs::disconnectSelected));
     session.add(selectedSessionItem("Reconnect", tabs::reconnectSelected));
     session.add(selectedSessionItem("Close tab", tabs::closeSelected));
+    session.addSeparator();
+    int shortcut = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
+    JMenuItem increaseFont = selectedSessionItem("Increase font size", () -> tabs.changeFontSize(1));
+    increaseFont.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_EQUALS, shortcut));
+    session.add(increaseFont);
+    JMenuItem decreaseFont = selectedSessionItem("Decrease font size", () -> tabs.changeFontSize(-1));
+    decreaseFont.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, shortcut));
+    session.add(decreaseFont);
+    JMenuItem resetFont = selectedSessionItem("Reset font size", tabs::resetFontSize);
+    resetFont.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_0, shortcut));
+    session.add(resetFont);
+    session.addSeparator();
     copySudoSessionItem = selectedSessionItem("Copy sudo password", tabs::copySudoPassword);
     session.add(copySudoSessionItem);
     bar.add(session);
@@ -721,6 +738,35 @@ public final class MainWindow extends JFrame {
     });
   }
 
+  private boolean dispatchTerminalFontKey(KeyEvent event) {
+    Component selected = tabs.getSelectedComponent();
+    Component source = event.getComponent();
+    int shortcut = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
+    if (selected == null || source == null
+        || !SwingUtilities.isDescendingFrom(source, selected)
+        || (event.getModifiersEx() & shortcut) == 0) return false;
+
+    int change = switch (event.getKeyCode()) {
+      case KeyEvent.VK_EQUALS, KeyEvent.VK_PLUS, KeyEvent.VK_ADD -> 1;
+      case KeyEvent.VK_MINUS, KeyEvent.VK_SUBTRACT -> -1;
+      case KeyEvent.VK_0 -> 0;
+      default -> Integer.MIN_VALUE;
+    };
+    if (event.getID() == KeyEvent.KEY_TYPED) {
+      char character = event.getKeyChar();
+      if (character != '+' && character != '=' && character != '-' && character != '0')
+        return false;
+    } else if (change == Integer.MIN_VALUE) {
+      return false;
+    }
+    if (event.getID() == KeyEvent.KEY_PRESSED) {
+      if (change == 0) tabs.resetFontSize();
+      else tabs.changeFontSize(change);
+    }
+    event.consume();
+    return true;
+  }
+
   private void copySudoForFocusedContext() {
     if (locked) return;
     Connection selectedHost = connectionTree.selectedValue() instanceof Connection host ? host : null;
@@ -755,6 +801,7 @@ public final class MainWindow extends JFrame {
     AppSettings changed = SettingsDialog.edit(this, preferences);
     if (changed == null) return;
     preferences = changed;
+    tabs.applyFontSettings(changed);
     try { changed.save(settings); showStatus("Settings saved"); }
     catch (Exception error) { showError("Could not save settings", error); }
   }
@@ -795,6 +842,8 @@ public final class MainWindow extends JFrame {
     operationVersion++;
     autoLock.stop();
     Toolkit.getDefaultToolkit().removeAWTEventListener(activityListener);
+    KeyboardFocusManager.getCurrentKeyboardFocusManager()
+        .removeKeyEventDispatcher(terminalFontKeys);
     tabs.shutdown();
     if (vault != null) vaultWorker.execute(vault::lock);
     vaultWorker.shutdown();

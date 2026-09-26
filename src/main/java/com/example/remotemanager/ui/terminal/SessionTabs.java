@@ -28,6 +28,8 @@ import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
 
 public final class SessionTabs extends JTabbedPane {
+  public static final int MIN_FONT_SIZE = 6;
+  public static final int MAX_FONT_SIZE = 48;
   private final Map<Component, OpenTab> openTabs = new HashMap<>();
   private final AtomicLong operationVersion = new AtomicLong();
   private final Supplier<Vault> vaultSupplier;
@@ -107,6 +109,30 @@ public final class SessionTabs extends JTabbedPane {
   public Connection selectedConnection() {
     OpenTab tab = selectedTab();
     return tab == null ? null : tab.connection();
+  }
+
+  public void changeFontSize(int change) {
+    OpenTab tab = selectedTab();
+    if (tab == null) return;
+    int size = Math.max(MIN_FONT_SIZE,
+        Math.min(MAX_FONT_SIZE, tab.session().fontSize() + change));
+    tab.session().setTerminalFont(settings.get().terminalFont(), size);
+    status.accept("Terminal font size: " + size);
+  }
+
+  public void resetFontSize() {
+    OpenTab tab = selectedTab();
+    if (tab == null) return;
+    int size = settings.get().terminalFontSize();
+    tab.session().setTerminalFont(settings.get().terminalFont(), size);
+    status.accept("Terminal font size: " + size);
+  }
+
+  public void applyFontSettings(AppSettings preferences) {
+    for (OpenTab tab : openTabs.values()) {
+      tab.session().setTerminalFont(
+          preferences.terminalFont(), preferences.terminalFontSize());
+    }
   }
 
   public void copySudoPassword(Connection connection) {

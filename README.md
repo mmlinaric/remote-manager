@@ -38,4 +38,6 @@ Key file buttons open the system file dialog in `~/.ssh` when that directory exi
 
 The configured OpenSSH `known_hosts` file is checked on each connection. Unknown keys require explicit trust. Changed known keys are rejected. SSHJ handles transport and authentication; JediTerm displays terminal sessions. The Soderer KDBX library reads and writes the KeePass vault.
 
+Use **Ctrl+=** or **Ctrl++** to increase the active terminal's font size, **Ctrl+-** to decrease it, and **Ctrl+0** to restore the size from Settings. On macOS, use **Cmd** instead of **Ctrl**. The same actions are in the **Session** menu. Changes made in Settings update all open terminal tabs immediately; shortcut changes apply to the active tab.
+
 The master password is kept as a mutable character array only while the vault is unlocked so edits can be saved without another prompt. It is cleared on lock or exit. Java and third-party libraries can create temporary copies, so complete memory erasure cannot be guaranteed. The app does not log credentials.

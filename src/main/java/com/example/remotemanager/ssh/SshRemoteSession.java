@@ -10,7 +10,11 @@ import com.hierynomus.sshj.userauth.agent.AgentProxy;
 import com.hierynomus.sshj.userauth.agent.AuthAgent;
 import com.hierynomus.sshj.userauth.keyprovider.OpenSSHKeyV1KeyFile;
 import com.jediterm.terminal.ui.JediTermWidget;
+import com.jediterm.terminal.ui.TerminalPanel;
 import com.jediterm.terminal.ui.settings.DefaultSettingsProvider;
+import com.jediterm.terminal.ui.settings.SettingsProvider;
+import com.jediterm.terminal.model.StyleState;
+import com.jediterm.terminal.model.TerminalTextBuffer;
 import java.awt.Font;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -38,6 +42,8 @@ public final class SshRemoteSession implements RemoteSession {
   private final KnownHostsVerifier.Prompt hostPrompt;
   private final KeyPassphrasePrompt passphrasePrompt;
   private final JediTermWidget terminal;
+  private final AtomicReference<Font> terminalFont;
+  private int fontSize;
 
   private volatile SSHClient client;
   private volatile Session channel;
@@ -57,13 +63,14 @@ public final class SshRemoteSession implements RemoteSession {
     this.knownHosts = knownHosts;
     this.hostPrompt = hostPrompt;
     this.passphrasePrompt = passphrasePrompt;
-    Font terminalFont = TerminalFonts.resolve(fontName, fontSize);
+    this.fontSize = fontSize;
+    this.terminalFont = new AtomicReference<>(TerminalFonts.resolve(fontName, fontSize));
     this.terminal =
-        new JediTermWidget(
+        new ResizableTerminalWidget(
             new DefaultSettingsProvider() {
               @Override
               public Font getTerminalFont() {
-                return terminalFont;
+                return terminalFont.get();
               }
 
               @Override
@@ -71,6 +78,45 @@ public final class SshRemoteSession implements RemoteSession {
                 return scrollback;
               }
             });
+  }
+
+  public int fontSize() {
+    return fontSize;
+  }
+
+  /** Called on the Swing event thread so the provider and panel change together. */
+  public void setTerminalFont(String fontName, int size) {
+    fontSize = size;
+    terminalFont.set(TerminalFonts.resolve(fontName, size));
+    ((ResizableTerminalWidget) terminal).refreshFont();
+  }
+
+  private static final class ResizableTerminalWidget extends JediTermWidget {
+    private ResizableTerminalWidget(SettingsProvider settings) {
+      super(settings);
+    }
+
+    @Override
+    protected TerminalPanel createTerminalPanel(
+        SettingsProvider settings, StyleState style, TerminalTextBuffer buffer) {
+      return new ResizableTerminalPanel(settings, buffer, style);
+    }
+
+    private void refreshFont() {
+      ((ResizableTerminalPanel) getTerminalPanel()).refreshFont();
+    }
+  }
+
+  private static final class ResizableTerminalPanel extends TerminalPanel {
+    private ResizableTerminalPanel(
+        SettingsProvider settings, TerminalTextBuffer buffer, StyleState style) {
+      super(settings, buffer, style);
+    }
+
+    private void refreshFont() {
+      reinitFontAndResize();
+      repaint();
+    }
   }
 
   @Override
