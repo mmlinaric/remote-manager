@@ -95,6 +95,7 @@ public final class ConnectionTreePanel extends JPanel {
         new MouseAdapter() {
           @Override
           public void mousePressed(MouseEvent event) {
+            if (!tree.isEnabled()) return;
             if (SwingUtilities.isLeftMouseButton(event)
                 && tree.getPathForLocation(event.getX(), event.getY()) == null) {
               TreePath path = pathAtRow(event.getY());
@@ -110,6 +111,7 @@ public final class ConnectionTreePanel extends JPanel {
 
           @Override
           public void mouseClicked(MouseEvent event) {
+            if (!tree.isEnabled()) return;
             if (SwingUtilities.isLeftMouseButton(event) && event.getClickCount() == 2) {
               TreePath path = pathAtRow(event.getY());
               if (path != null
@@ -121,7 +123,7 @@ public final class ConnectionTreePanel extends JPanel {
           }
 
           private void showPopup(MouseEvent event) {
-            if (!event.isPopupTrigger()) {
+            if (!tree.isEnabled() || !event.isPopupTrigger()) {
               return;
             }
             TreePath path = pathAtRow(event.getY());
@@ -170,6 +172,8 @@ public final class ConnectionTreePanel extends JPanel {
   }
 
   public void onSelectionChanged(Runnable action) { selectionChanged = action; }
+
+  public void setVaultBusy(boolean busy) { tree.setEnabled(!busy); }
 
   public void expandAll() {
     for (int row = 0; row < tree.getRowCount(); row++) {
