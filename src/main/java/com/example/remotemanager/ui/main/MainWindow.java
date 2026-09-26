@@ -83,8 +83,6 @@ import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.UIManager;
-import javax.swing.event.MenuEvent;
-import javax.swing.event.MenuListener;
 
 /** Vault-first desktop workspace. All host and identity data comes from the unlocked KDBX file. */
 public final class MainWindow extends JFrame {
@@ -367,23 +365,8 @@ public final class MainWindow extends JFrame {
   }
   private static JMenu topMenu(String title) {
     JMenu menu = new JMenu(title);
-    menu.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10));
-    Color normalForeground = menu.getForeground();
-    Color selectedBackground = UIManager.getColor("Menu.selectionBackground");
-    if (selectedBackground != null) {
-      Color selectedForeground = SelectionColors.foregroundFor(selectedBackground);
-      menu.addMenuListener(new MenuListener() {
-        @Override public void menuSelected(MenuEvent event) {
-          menu.setForeground(selectedForeground);
-        }
-        @Override public void menuDeselected(MenuEvent event) {
-          menu.setForeground(normalForeground);
-        }
-        @Override public void menuCanceled(MenuEvent event) {
-          menu.setForeground(normalForeground);
-        }
-      });
-    }
+    int horizontalPadding = com.sun.jna.Platform.isLinux() ? 10 : 4;
+    menu.setBorder(BorderFactory.createEmptyBorder(0, horizontalPadding, 0, horizontalPadding));
     return menu;
   }
   private static JMenuItem item(String title, javax.swing.Icon icon, Runnable action) {
