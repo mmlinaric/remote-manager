@@ -4,6 +4,7 @@ import com.example.remotemanager.model.AuthenticationType;
 import com.example.remotemanager.model.Connection;
 import com.example.remotemanager.model.ConnectionFolder;
 import com.example.remotemanager.ui.vault.IdentityEditor;
+import com.example.remotemanager.ui.DialogEscape;
 import com.example.remotemanager.ui.KeyFilePicker;
 import com.example.remotemanager.vault.VaultEntry;
 import com.example.remotemanager.vault.kdbx.KdbxVault;
@@ -182,6 +183,7 @@ public final class ConnectionEditor extends JDialog {
     JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT));
     save.addActionListener(event -> submit(current));
     cancel.addActionListener(event -> dispose());
+    DialogEscape.bind(this, cancel);
     actions.add(save); actions.add(cancel);
     bottom.add(actions, BorderLayout.SOUTH);
     add(new JScrollPane(form), BorderLayout.CENTER);

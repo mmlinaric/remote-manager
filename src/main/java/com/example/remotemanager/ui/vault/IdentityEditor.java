@@ -2,6 +2,7 @@ package com.example.remotemanager.ui.vault;
 
 import com.example.remotemanager.vault.VaultEntry;
 import com.example.remotemanager.ui.KeyFilePicker;
+import com.example.remotemanager.ui.DialogEscape;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -95,6 +96,7 @@ public final class IdentityEditor {
       }));
     });
     cancel.addActionListener(event -> { password.setText(""); dialog.dispose(); });
+    DialogEscape.bind(dialog, cancel);
     JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
     buttons.add(save); buttons.add(cancel);
     dialog.add(form, BorderLayout.CENTER);

@@ -5,6 +5,7 @@ import com.example.remotemanager.model.ConnectionFolder;
 import com.example.remotemanager.persistence.FolderExpansionPreferences;
 import com.example.remotemanager.persistence.SettingsRepository;
 import com.example.remotemanager.ui.SilkIcons;
+import com.example.remotemanager.ui.DialogEscape;
 import com.example.remotemanager.ui.connections.ConnectionEditor;
 import com.example.remotemanager.ui.connections.ConnectionTreePanel;
 import com.example.remotemanager.ui.settings.AppSettings;
@@ -512,6 +513,7 @@ public final class MainWindow extends JFrame {
       dialog.setVisible(false);
     });
     cancel.addActionListener(event -> dialog.setVisible(false));
+    DialogEscape.bind(dialog, cancel);
     field.addActionListener(event -> unlock.doClick());
     JPanel content = new JPanel(new BorderLayout(0, 12));
     content.setBorder(BorderFactory.createEmptyBorder(16, 18, 12, 18));
