@@ -51,7 +51,6 @@ public final class ConnectionTreePanel extends JPanel {
 
   public ConnectionTreePanel(Actions actions) {
     super(new BorderLayout());
-    add(new JLabel("Connections"), BorderLayout.NORTH);
     add(new JScrollPane(tree), BorderLayout.CENTER);
     add(emptyHint, BorderLayout.SOUTH);
     tree.setCellRenderer(
@@ -96,6 +95,11 @@ public final class ConnectionTreePanel extends JPanel {
         new MouseAdapter() {
           @Override
           public void mousePressed(MouseEvent event) {
+            if (SwingUtilities.isLeftMouseButton(event)
+                && tree.getPathForLocation(event.getX(), event.getY()) == null) {
+              TreePath path = pathAtRow(event.getY());
+              if (path != null) tree.setSelectionPath(path);
+            }
             showPopup(event);
           }
 
@@ -107,7 +111,7 @@ public final class ConnectionTreePanel extends JPanel {
           @Override
           public void mouseClicked(MouseEvent event) {
             if (SwingUtilities.isLeftMouseButton(event) && event.getClickCount() == 2) {
-              TreePath path = tree.getPathForLocation(event.getX(), event.getY());
+              TreePath path = pathAtRow(event.getY());
               if (path != null
                   && ((DefaultMutableTreeNode) path.getLastPathComponent()).getUserObject()
                       instanceof Connection connection) {
@@ -120,13 +124,8 @@ public final class ConnectionTreePanel extends JPanel {
             if (!event.isPopupTrigger()) {
               return;
             }
-            TreePath path = tree.getClosestPathForLocation(event.getX(), event.getY());
-            Rectangle bounds = path == null ? null : tree.getPathBounds(path);
-            if (bounds == null
-                || event.getY() < bounds.y
-                || event.getY() >= bounds.y + bounds.height) {
-              return;
-            }
+            TreePath path = pathAtRow(event.getY());
+            if (path == null) return;
             Object item = ((DefaultMutableTreeNode) path.getLastPathComponent()).getUserObject();
             JPopupMenu popup = new JPopupMenu();
             if (item instanceof ConnectionFolder folder) {
@@ -152,6 +151,12 @@ public final class ConnectionTreePanel extends JPanel {
             popup.show(tree, event.getX(), event.getY());
           }
         });
+  }
+
+  private TreePath pathAtRow(int y) {
+    TreePath path = tree.getClosestPathForLocation(0, y);
+    Rectangle bounds = path == null ? null : tree.getPathBounds(path);
+    return bounds != null && y >= bounds.y && y < bounds.y + bounds.height ? path : null;
   }
 
   private static JMenuItem item(String title, Icon icon, Runnable action) {

@@ -104,7 +104,7 @@ class FolderExpansionWindowTest {
   }
 
   private static JTree tree(ConnectionTreePanel panel) {
-    return (JTree) ((JScrollPane) panel.getComponent(1)).getViewport().getView();
+    return (JTree) ((JScrollPane) panel.getComponent(0)).getViewport().getView();
   }
 
   private static TreePath pathFor(JTree tree, UUID id) {

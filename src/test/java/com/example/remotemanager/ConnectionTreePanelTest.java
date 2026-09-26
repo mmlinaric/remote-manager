@@ -9,6 +9,8 @@ import com.example.remotemanager.model.ConnectionFolder;
 import com.example.remotemanager.model.AuthenticationType;
 import com.example.remotemanager.ui.connections.ConnectionTreePanel;
 import com.example.remotemanager.vault.VaultEntry;
+import java.awt.Rectangle;
+import java.awt.event.MouseEvent;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -52,7 +54,7 @@ class ConnectionTreePanelTest {
       List<ConnectionFolder> folders = List.of(parent, child, grandchild);
       panel.showConnections(folders, List.of());
 
-      JTree tree = ((JTree) ((JScrollPane) panel.getComponent(1)).getViewport().getView());
+      JTree tree = ((JTree) ((JScrollPane) panel.getComponent(0)).getViewport().getView());
       tree.expandPath(pathFor(tree, child.id()));
       tree.setSelectionPath(pathFor(tree, grandchild.id()));
       tree.collapsePath(pathFor(tree, parent.id()));
@@ -88,6 +90,39 @@ class ConnectionTreePanelTest {
   }
 
   @Test
+  void selectsAndOpensHostFromEmptySpaceOnItsRow() throws Exception {
+    SwingUtilities.invokeAndWait(() -> {
+      NoopActions actions = new NoopActions();
+      ConnectionTreePanel panel = new ConnectionTreePanel(actions);
+      Connection host = new Connection(UUID.randomUUID(), "Server", "server.example", 22,
+          "admin", null, AuthenticationType.PASSWORD, UUID.randomUUID(), null,
+          null, null, "", 0);
+      panel.showConnections(List.of(), List.of(host));
+
+      JTree tree = (JTree) ((JScrollPane) panel.getComponent(0)).getViewport().getView();
+      tree.setSize(400, 200);
+      Rectangle row = tree.getRowBounds(1);
+      int x = row.x + row.width + 20;
+      int y = row.y + row.height / 2;
+      assertTrue(x < tree.getWidth());
+      assertEquals(null, tree.getPathForLocation(x, y));
+
+      tree.dispatchEvent(new MouseEvent(tree, MouseEvent.MOUSE_PRESSED,
+          System.currentTimeMillis(), 0, x, y, 1, false, MouseEvent.BUTTON1));
+      assertEquals(host.id().toString(), panel.selectedId());
+      tree.dispatchEvent(new MouseEvent(tree, MouseEvent.MOUSE_CLICKED,
+          System.currentTimeMillis(), 0, x, y, 2, false, MouseEvent.BUTTON1));
+      assertEquals(host, actions.opened);
+
+      tree.clearSelection();
+      tree.dispatchEvent(new MouseEvent(tree, MouseEvent.MOUSE_PRESSED,
+          System.currentTimeMillis(), 0, x, row.y + row.height + 5, 1, false,
+          MouseEvent.BUTTON1));
+      assertEquals("", panel.selectedId());
+    });
+  }
+
+  @Test
   void sudoCopyAvailabilityDoesNotDependOnSshIdentity() throws Exception {
     SwingUtilities.invokeAndWait(() -> {
       ConnectionTreePanel panel = new ConnectionTreePanel(new NoopActions());
@@ -107,8 +142,9 @@ class ConnectionTreePanelTest {
   }
 
   private static final class NoopActions implements ConnectionTreePanel.Actions {
+    private Connection opened;
     @Override
-    public void open(Connection connection) {}
+    public void open(Connection connection) { opened = connection; }
 
     @Override
     public void copySudoPassword(Connection connection) {}
