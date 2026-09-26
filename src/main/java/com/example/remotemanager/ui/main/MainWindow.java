@@ -68,6 +68,7 @@ import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
+import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
@@ -102,6 +103,12 @@ public final class MainWindow extends JFrame {
   private JMenuItem copySudoSessionItem;
   private JButton copySudoButton;
   private JButton unlockWelcomeButton;
+  private JButton openWelcomeButton;
+  private JButton createWelcomeButton;
+  private JMenuItem openVaultMenuItem;
+  private JMenuItem createVaultMenuItem;
+  private JMenuItem exitMenuItem;
+  private final JProgressBar creationProgress = new JProgressBar();
   private KdbxVault vault;
   private AppSettings preferences;
   private final SessionTabs tabs = new SessionTabs(() -> vault, this::sessionReady,
@@ -116,6 +123,7 @@ public final class MainWindow extends JFrame {
   private final Timer autoLock = new Timer(15000, event -> checkAutoLock());
   private final AWTEventListener activityListener = this::recordActivity;
   private boolean locked = true;
+  private boolean creatingVault;
   private boolean sidebarWidthInitialized;
   private boolean detailsHeightInitialized;
   private boolean connectionsLoaded;
@@ -183,13 +191,21 @@ public final class MainWindow extends JFrame {
     unlockWelcomeButton.addActionListener(event -> unlockVault());
     content.add(unlockWelcomeButton, c);
     c.gridx++;
-    JButton open = new JButton("Open vault...", SilkIcons.OPEN_VAULT);
-    open.addActionListener(event -> openVault());
-    content.add(open, c);
+    openWelcomeButton = new JButton("Open vault...", SilkIcons.OPEN_VAULT);
+    openWelcomeButton.addActionListener(event -> openVault());
+    content.add(openWelcomeButton, c);
     c.gridx++;
-    JButton create = new JButton("Create vault...", SilkIcons.CREATE_VAULT);
-    create.addActionListener(event -> createVault());
-    content.add(create, c);
+    createWelcomeButton = new JButton("Create vault...", SilkIcons.CREATE_VAULT);
+    createWelcomeButton.addActionListener(event -> createVault());
+    content.add(createWelcomeButton, c);
+    c.gridx = 0; c.gridy++; c.gridwidth = 3;
+    c.fill = GridBagConstraints.HORIZONTAL;
+    c.weightx = 1;
+    creationProgress.setIndeterminate(true);
+    creationProgress.setStringPainted(true);
+    creationProgress.setString("Creating vault...");
+    creationProgress.setVisible(false);
+    content.add(creationProgress, c);
     outer.add(content);
     return outer;
   }
@@ -276,13 +292,17 @@ public final class MainWindow extends JFrame {
     file.add(vaultItem("New folder", SilkIcons.NEW_FOLDER, () -> newFolder(null)));
     file.add(vaultItem("New identity", SilkIcons.NEW_IDENTITY, () -> editIdentity(null)));
     file.addSeparator();
-    file.add(item("Open vault...", SilkIcons.OPEN_VAULT, this::openVault));
-    file.add(item("Create vault...", SilkIcons.CREATE_VAULT, this::createVault));
+    openVaultMenuItem = item("Open vault...", SilkIcons.OPEN_VAULT, this::openVault);
+    file.add(openVaultMenuItem);
+    createVaultMenuItem = item("Create vault...", SilkIcons.CREATE_VAULT, this::createVault);
+    file.add(createVaultMenuItem);
     unlockMenuItem = item("Unlock vault", SilkIcons.UNLOCK, this::unlockVault);
     file.add(unlockMenuItem);
     file.add(vaultItem("Lock vault", SilkIcons.LOCK, this::lockVault));
     file.add(vaultItem("Reload vault", SilkIcons.RECONNECT, this::reloadVault));
-    file.addSeparator(); file.add(item("Exit", SilkIcons.EXIT, this::closeWindow));
+    file.addSeparator();
+    exitMenuItem = item("Exit", SilkIcons.EXIT, this::closeWindow);
+    file.add(exitMenuItem);
     bar.add(file);
     JMenu host = topMenu("Host");
     connectSelectedItem = selectedHostItem("Connect selected", SilkIcons.CONNECT, this::connectSelected);
@@ -382,8 +402,19 @@ public final class MainWindow extends JFrame {
     boolean canCopySudo = !locked && connectionTree.hasSudoPassword(tabs.selectedConnection());
     if (copySudoSessionItem != null) copySudoSessionItem.setEnabled(canCopySudo);
     if (copySudoButton != null) copySudoButton.setEnabled(canCopySudo);
-    if (unlockMenuItem != null) unlockMenuItem.setEnabled(locked && vault != null);
-    if (unlockWelcomeButton != null) unlockWelcomeButton.setEnabled(locked && vault != null);
+    if (unlockMenuItem != null) unlockMenuItem.setEnabled(!creatingVault && locked && vault != null);
+    if (unlockWelcomeButton != null) unlockWelcomeButton.setEnabled(!creatingVault && locked && vault != null);
+    if (openVaultMenuItem != null) openVaultMenuItem.setEnabled(!creatingVault);
+    if (createVaultMenuItem != null) createVaultMenuItem.setEnabled(!creatingVault);
+    if (exitMenuItem != null) exitMenuItem.setEnabled(!creatingVault);
+    if (openWelcomeButton != null) openWelcomeButton.setEnabled(!creatingVault);
+    if (createWelcomeButton != null) createWelcomeButton.setEnabled(!creatingVault);
+  }
+
+  private void setCreatingVault(boolean creating) {
+    creatingVault = creating;
+    creationProgress.setVisible(creating);
+    updateActions();
   }
 
   private void showLocked() {
@@ -432,6 +463,7 @@ public final class MainWindow extends JFrame {
   }
 
   private void openVault() {
+    if (creatingVault) return;
     Path path = chooseVaultFile(FileDialog.LOAD);
     if (path == null) return;
     lockVault();
@@ -442,14 +474,25 @@ public final class MainWindow extends JFrame {
   }
 
   private void createVault() {
+    if (creatingVault) return;
     Path path = chooseVaultFile(FileDialog.SAVE);
     if (path == null) return;
     JPasswordField first = new JPasswordField(24), second = new JPasswordField(24);
-    JPanel fields = new JPanel(new java.awt.GridLayout(2, 2, 5, 5));
-    fields.add(new JLabel("Master password:")); fields.add(first);
-    fields.add(new JLabel("Confirm password:")); fields.add(second);
+    JPanel fields = new JPanel(new GridBagLayout());
+    GridBagConstraints label = new GridBagConstraints();
+    label.gridx = 0; label.anchor = GridBagConstraints.WEST;
+    label.insets = new Insets(0, 0, 6, 10);
+    fields.add(new JLabel("Master password:"), label);
+    label.gridy = 1; label.insets = new Insets(0, 0, 0, 10);
+    fields.add(new JLabel("Confirm password:"), label);
+    GridBagConstraints input = new GridBagConstraints();
+    input.gridx = 1; input.weightx = 1; input.fill = GridBagConstraints.HORIZONTAL;
+    input.insets = new Insets(0, 0, 6, 0);
+    fields.add(first, input);
+    input.gridy = 1; input.insets = new Insets(0, 0, 0, 0);
+    fields.add(second, input);
     if (JOptionPane.showConfirmDialog(this, fields, "Create KeePass vault",
-        JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) return;
+        JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return;
     char[] password = first.getPassword(), confirmation = second.getPassword();
     first.setText(""); second.setText("");
     if (password.length == 0 || !Arrays.equals(password, confirmation)) {
@@ -459,7 +502,9 @@ public final class MainWindow extends JFrame {
     Arrays.fill(confirmation, '\0');
     lockVault();
     long version = operationVersion;
-    status.setText("Creating vault...");
+    creationProgress.setString("Creating " + path.getFileName() + "...");
+    setCreatingVault(true);
+    status.setText("Creating vault: " + path.getFileName() + "...");
     CompletableFuture.supplyAsync(() -> {
       try {
         KdbxVault.create(path, password);
@@ -471,12 +516,15 @@ public final class MainWindow extends JFrame {
     }, vaultWorker).whenComplete((created, error) -> SwingUtilities.invokeLater(() -> {
       if (version != operationVersion || !isDisplayable()) {
         if (created != null) created.lock();
+        if (isDisplayable()) setCreatingVault(false);
         return;
       }
-      if (error != null) { showError("Could not create vault", error); showLocked(); return; }
-      vault = created;
-      saveSetting("vault.path", path.toAbsolutePath().toString());
-      showWorkspace();
+      try {
+        if (error != null) { showError("Could not create vault", error); showLocked(); return; }
+        vault = created;
+        saveSetting("vault.path", path.toAbsolutePath().toString());
+        showWorkspace();
+      } finally { setCreatingVault(false); }
     }));
   }
 
@@ -491,6 +539,7 @@ public final class MainWindow extends JFrame {
   }
 
   private void unlockVault() {
+    if (creatingVault) return;
     KdbxVault selected = vault;
     if (selected == null) { openVault(); return; }
     if (!locked) return;
@@ -872,6 +921,7 @@ public final class MainWindow extends JFrame {
   }
 
   private void closeWindow() {
+    if (creatingVault) return;
     if ((getExtendedState() & Frame.MAXIMIZED_BOTH) != Frame.MAXIMIZED_BOTH) {
       saveSetting("window.x", Integer.toString(getX()));
       saveSetting("window.y", Integer.toString(getY()));
