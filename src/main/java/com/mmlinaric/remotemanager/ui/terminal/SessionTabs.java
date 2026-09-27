@@ -9,7 +9,6 @@ import com.mmlinaric.remotemanager.ui.settings.AppSettings;
 import com.mmlinaric.remotemanager.util.SecureClipboard;
 import com.mmlinaric.remotemanager.vault.Vault;
 import java.awt.Component;
-import java.awt.FlowLayout;
 import java.awt.Toolkit;
 import java.time.Duration;
 import java.util.HashMap;
@@ -23,13 +22,9 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import javax.swing.BorderFactory;
 import javax.swing.Icon;
-import javax.swing.JButton;
 import javax.swing.JComponent;
-import javax.swing.JLabel;
 import javax.swing.JOptionPane;
-import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
@@ -212,7 +207,7 @@ public final class SessionTabs extends JTabbedPane {
         addTab(connection.name() + " (connecting)", SilkIcons.CONNECTING, component);
         setTabComponentAt(
                 indexOfComponent(component),
-                new TabHeader(
+                new SessionTabHeader(
                         connection.name() + " (connecting)",
                         SilkIcons.CONNECTING,
                         () -> closeTab(tab),
@@ -329,31 +324,7 @@ public final class SessionTabs extends JTabbedPane {
                         default -> SilkIcons.DISCONNECTED;
                     };
             setIconAt(index, icon);
-            if (getTabComponentAt(index) instanceof TabHeader header) header.update(title, icon);
-        }
-    }
-
-    private static final class TabHeader extends JPanel {
-        private final JLabel label;
-
-        TabHeader(String title, Icon icon, Runnable close, String connectionName) {
-            super(new FlowLayout(FlowLayout.LEFT, 4, 0));
-            setOpaque(false);
-            label = new JLabel(title, icon, JLabel.LEADING);
-            add(label);
-            JButton closeButton = new JButton(SilkIcons.CLOSE);
-            closeButton.setBorder(BorderFactory.createEmptyBorder(2, 2, 2, 2));
-            closeButton.setContentAreaFilled(false);
-            closeButton.setFocusable(false);
-            closeButton.setToolTipText("Close this session");
-            closeButton.getAccessibleContext().setAccessibleName("Close " + connectionName + " session");
-            closeButton.addActionListener(event -> close.run());
-            add(closeButton);
-        }
-
-        void update(String title, Icon icon) {
-            label.setText(title);
-            label.setIcon(icon);
+            if (getTabComponentAt(index) instanceof SessionTabHeader header) header.update(title, icon);
         }
     }
 
