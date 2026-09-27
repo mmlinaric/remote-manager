@@ -307,23 +307,26 @@ class VaultTest {
         KdbxVault.create(file, master);
         KdbxVault vault = new KdbxVault(file);
         vault.unlock(master);
-        VaultWorkspace workspace = new VaultWorkspace(vault);
+        try (VaultWorkspace workspace = new VaultWorkspace(vault)) {
+            UUID folderId = workspace
+                    .mutateAndSaveAsync(current -> current.createFolder(null, "Production"))
+                    .join();
+            assertEquals(
+                    folderId, workspace.refresh().join().folders().getFirst().id());
 
-        UUID folderId = workspace.mutateAndSave(current -> current.createFolder(null, "Production"));
-        assertEquals(folderId, workspace.snapshot().folders().getFirst().id());
+            KdbxVault external = new KdbxVault(file);
+            external.unlock(master);
+            external.addEntry("External", "alice", "secret".toCharArray(), Map.of(), null, null);
+            external.save();
 
-        KdbxVault external = new KdbxVault(file);
-        external.unlock(master);
-        external.addEntry("External", "alice", "secret".toCharArray(), Map.of(), null, null);
-        external.save();
-
-        assertThrows(
-                com.mmlinaric.remotemanager.vault.VaultConflictException.class,
-                () -> workspace.mutateAndSave(current -> current.createFolder(null, "Unsaved")));
-        assertEquals(
-                List.of("Production"),
-                workspace.snapshot().folders().stream()
-                        .map(ConnectionFolder::name)
-                        .toList());
+            assertThrows(
+                    com.mmlinaric.remotemanager.vault.VaultConflictException.class,
+                    () -> workspace.mutateAndSave(current -> current.createFolder(null, "Unsaved")));
+            assertEquals(
+                    List.of("Production"),
+                    workspace.snapshot().folders().stream()
+                            .map(ConnectionFolder::name)
+                            .toList());
+        }
     }
 }

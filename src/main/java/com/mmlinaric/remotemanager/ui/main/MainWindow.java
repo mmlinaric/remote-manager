@@ -55,8 +55,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.swing.AbstractAction;
 import javax.swing.AbstractButton;
@@ -91,7 +89,6 @@ public final class MainWindow extends JFrame {
     private final SettingsRepository settings;
     private final UpdateController updates;
     private final FolderExpansionPreferences folderExpansion;
-    private final ExecutorService vaultWorker = Executors.newSingleThreadExecutor();
     private final JPanel cards = new JPanel(new CardLayout());
     private JLabel vaultPath;
     private final JLabel status = new JLabel("Open or create a vault to begin.");
@@ -115,6 +112,7 @@ public final class MainWindow extends JFrame {
     private JMenuItem exitMenuItem;
     private JProgressBar creationProgress;
     private WorkspaceVault vault;
+    private VaultWorkspace vaultWorkspace;
     private AppSettings preferences;
     private final SessionTabs tabs =
             new SessionTabs(() -> vault, this::sessionReady, this::showStatus, () -> preferences, this::currentHost);
@@ -163,7 +161,7 @@ public final class MainWindow extends JFrame {
             updateActions();
             updateVaultState();
         });
-        settings.get("vault.path").ifPresent(path -> vault = new KdbxVault(Path.of(path)));
+        settings.get("vault.path").ifPresent(path -> selectVault(new KdbxVault(Path.of(path))));
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
         setMinimumSize(new Dimension(800, 520));
         setSize(number("window.width", 1120), number("window.height", 720));
@@ -459,6 +457,7 @@ public final class MainWindow extends JFrame {
     }
 
     private void showWorkspace() {
+        workspace();
         locked = false;
         lastActivity = System.nanoTime();
         connectionsLoaded = false;
@@ -499,7 +498,7 @@ public final class MainWindow extends JFrame {
         Path path = chooseVaultFile(FileDialog.LOAD);
         if (path == null) return;
         lockVault();
-        vault = new KdbxVault(path);
+        selectVault(new KdbxVault(path));
         saveSetting("vault.path", path.toAbsolutePath().toString());
         showLocked();
         unlockVault();
@@ -516,23 +515,10 @@ public final class MainWindow extends JFrame {
         creationProgress.setString("Creating " + path.getFileName() + "...");
         setCreatingVault(true);
         status.setText("Creating vault: " + path.getFileName() + "...");
-        CompletableFuture.supplyAsync(
-                        () -> {
-                            try {
-                                KdbxVault.create(path, password);
-                                KdbxVault created = new KdbxVault(path);
-                                created.unlock(password);
-                                return created;
-                            } catch (Exception error) {
-                                throw new RuntimeException(error);
-                            } finally {
-                                Arrays.fill(password, '\0');
-                            }
-                        },
-                        vaultWorker)
+        VaultWorkspace.create(path, password)
                 .whenComplete((created, error) -> SwingUtilities.invokeLater(() -> {
                     if (version != operationVersion || !isDisplayable()) {
-                        if (created != null) created.lock();
+                        if (created != null) created.close();
                         if (isDisplayable()) setCreatingVault(false);
                         return;
                     }
@@ -542,7 +528,7 @@ public final class MainWindow extends JFrame {
                             showLocked();
                             return;
                         }
-                        vault = created;
+                        selectWorkspace(created);
                         saveSetting("vault.path", path.toAbsolutePath().toString());
                         showWorkspace();
                     } finally {
@@ -598,17 +584,8 @@ public final class MainWindow extends JFrame {
             dialog.pack();
             long version = ++operationVersion;
             status.setText("Unlocking vault...");
-            CompletableFuture.runAsync(
-                            () -> {
-                                try {
-                                    selected.unlock(password);
-                                } catch (Exception error) {
-                                    throw new RuntimeException(error);
-                                } finally {
-                                    Arrays.fill(password, '\0');
-                                }
-                            },
-                            vaultWorker)
+            vaultWorkspace
+                    .unlock(password)
                     .whenComplete((ignored, error) -> SwingUtilities.invokeLater(() -> {
                         if (version != operationVersion || vault != selected || !dialog.isDisplayable()) {
                             selected.lock();
@@ -697,8 +674,8 @@ public final class MainWindow extends JFrame {
         identityHint.setText("  No identities yet. Create one here or while adding a host.");
         showLocked();
         setSavingVault(false);
-        WorkspaceVault selected = vault;
-        if (selected != null) vaultWorker.execute(selected::lock);
+        VaultWorkspace currentWorkspace = workspace();
+        if (currentWorkspace != null) currentWorkspace.lock();
     }
 
     private void reloadVault() {
@@ -715,15 +692,10 @@ public final class MainWindow extends JFrame {
         if (locked || vault == null) return;
         WorkspaceVault selected = vault;
         long version = operationVersion;
-        CompletableFuture.supplyAsync(
-                        () -> {
-                            try {
-                                return new VaultWorkspace(selected).snapshot();
-                            } catch (Exception error) {
-                                throw new RuntimeException(error);
-                            }
-                        },
-                        vaultWorker)
+        VaultWorkspace currentWorkspace = workspace();
+        if (currentWorkspace == null) return;
+        currentWorkspace
+                .refresh()
                 .whenComplete((data, error) -> SwingUtilities.invokeLater(() -> {
                     if (locked || version != operationVersion || vault != selected) return;
                     if (error != null) {
@@ -764,15 +736,12 @@ public final class MainWindow extends JFrame {
         WorkspaceVault selected = vault;
         long version = operationVersion;
         setSavingVault(true);
-        return CompletableFuture.supplyAsync(
-                        () -> {
-                            try {
-                                return new VaultWorkspace(selected).mutateAndSave(action::run);
-                            } catch (Exception error) {
-                                throw new RuntimeException(error);
-                            }
-                        },
-                        vaultWorker)
+        VaultWorkspace currentWorkspace = workspace();
+        if (currentWorkspace == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Vault workspace is unavailable"));
+        }
+        return currentWorkspace
+                .mutateAndSaveAsync(action::run)
                 .whenComplete((revealId, error) -> SwingUtilities.invokeLater(() -> {
                     if (version != operationVersion || vault != selected || locked) return;
                     if (!selected.isUnlocked()) {
@@ -1132,8 +1101,8 @@ public final class MainWindow extends JFrame {
         KeyboardFocusManager.getCurrentKeyboardFocusManager().removePropertyChangeListener("focusOwner", buttonFocus);
         tabs.shutdown();
         updates.close();
-        if (vault != null) vaultWorker.execute(vault::lock);
-        vaultWorker.shutdown();
+        VaultWorkspace currentWorkspace = workspace();
+        if (currentWorkspace != null) currentWorkspace.close();
         super.dispose();
     }
 
@@ -1143,6 +1112,31 @@ public final class MainWindow extends JFrame {
         } catch (Exception error) {
             return fallback;
         }
+    }
+
+    private void selectVault(WorkspaceVault selected) {
+        selectWorkspace(new VaultWorkspace(selected));
+    }
+
+    private void selectWorkspace(VaultWorkspace selected) {
+        if (vaultWorkspace != null) {
+            vaultWorkspace.close();
+        }
+        vaultWorkspace = selected;
+        vault = selected.vault();
+    }
+
+    private VaultWorkspace workspace() {
+        if (vault == null) {
+            return null;
+        }
+        if (vaultWorkspace == null || vaultWorkspace.vault() != vault) {
+            if (vaultWorkspace != null) {
+                vaultWorkspace.close();
+            }
+            vaultWorkspace = new VaultWorkspace(vault);
+        }
+        return vaultWorkspace;
     }
 
     private void saveSetting(String key, String value) {
