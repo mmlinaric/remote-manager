@@ -17,7 +17,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -25,7 +24,6 @@ import java.util.Optional;
 import java.util.UUID;
 import org.linguafranca.pwdb.kdbx.jackson.JacksonDatabase;
 import org.linguafranca.pwdb.kdbx.jackson.JacksonEntry;
-import org.linguafranca.pwdb.kdbx.jackson.JacksonGroup;
 
 /** KeePassJava2 adapter for the app's KDBX4 workspace. */
 public final class KdbxVault implements WorkspaceVault {
@@ -248,109 +246,39 @@ public final class KdbxVault implements WorkspaceVault {
         }
     }
 
-    private void pruneHostSecrets(UUID ownerHostId, Connection connection) throws VaultException {
-        for (JacksonEntry entry : entryStore().all()) {
-            if (!KdbxEntries.hasRole(entry, HOST_SECRET)
-                    || !ownerHostId.toString().equals(entry.getProperty(SECRET_OWNER))) continue;
-            UUID id = KdbxEntries.logicalId(entry);
-            if (connection == null
-                    || (!id.equals(connection.sshCredentialEntryId())
-                            && !id.equals(connection.sudoCredentialEntryId())))
-                entry.getParent().removeEntry(entry);
-        }
-    }
-
     public synchronized List<ConnectionFolder> folders() throws VaultException {
         requireUnlocked();
-        JacksonGroup root = groups().findRoot(HOST_ROOT);
-        List<ConnectionFolder> result = new ArrayList<>();
-        if (root != null) collectFolders(root, null, result);
-        return result;
-    }
-
-    private void collectFolders(JacksonGroup parent, UUID parentId, List<ConnectionFolder> result) {
-        for (JacksonGroup child : parent.getGroups()) {
-            UUID id = child.getUuid();
-            result.add(new ConnectionFolder(id, parentId, child.getName(), 0));
-            collectFolders(child, id, result);
-        }
+        return connectionStore().folders();
     }
 
     public synchronized List<Connection> connections() throws VaultException {
         requireUnlocked();
-        JacksonGroup root = groups().findRoot(HOST_ROOT);
-        List<Connection> result = new ArrayList<>();
-        if (root != null) collectConnections(root, null, result);
-        return result;
-    }
-
-    private void collectConnections(JacksonGroup group, UUID parentId, List<Connection> result) throws VaultException {
-        for (JacksonEntry entry : group.getEntries()) {
-            if (!KdbxEntries.hasRole(entry, HOST)) continue;
-            try {
-                result.add(KdbxConnectionMapper.read(entry, parentId, KdbxEntries.logicalId(entry)));
-            } catch (RuntimeException error) {
-                throw new VaultException("Invalid saved host: " + entry.getTitle(), error);
-            }
-        }
-        for (JacksonGroup child : group.getGroups()) collectConnections(child, child.getUuid(), result);
+        return connectionStore().connections();
     }
 
     public synchronized UUID createFolder(UUID parentId, String name) throws VaultException {
         requireUnlocked();
-        if (name == null || name.isBlank()) throw new VaultException("Folder name is required");
-        JacksonGroup root = groups().getOrCreateRoot(HOST_ROOT, "Remote Manager Hosts");
-        JacksonGroup parent = parentId == null ? root : groups().findGroup(root, parentId);
-        if (parent == null) throw new VaultException("Parent folder is missing");
-        JacksonGroup folder = database.newGroup(name);
-        parent.addGroup(folder);
-        return folder.getUuid();
+        return connectionStore().createFolder(parentId, name);
     }
 
     public synchronized void renameFolder(UUID id, String name) throws VaultException {
         requireUnlocked();
-        if (name == null || name.isBlank()) throw new VaultException("Folder name is required");
-        JacksonGroup root = groups().findRoot(HOST_ROOT);
-        JacksonGroup folder = root == null ? null : groups().findGroup(root, id);
-        if (folder == null || folder == root) throw new VaultException("Folder is missing");
-        folder.setName(name);
+        connectionStore().renameFolder(id, name);
     }
 
     public synchronized void deleteFolder(UUID id) throws VaultException {
         requireUnlocked();
-        JacksonGroup root = groups().findRoot(HOST_ROOT);
-        JacksonGroup folder = root == null ? null : groups().findGroup(root, id);
-        if (folder == null || folder == root) throw new VaultException("Folder is missing");
-        if (!folder.getEntries().isEmpty() || !folder.getGroups().isEmpty())
-            throw new VaultException("Move or delete this folder's contents first");
-        folder.getParent().removeGroup(folder);
+        connectionStore().deleteFolder(id);
     }
 
     public synchronized void putConnection(Connection connection) throws VaultException {
         requireUnlocked();
-        JacksonGroup root = groups().getOrCreateRoot(HOST_ROOT, "Remote Manager Hosts");
-        JacksonGroup parent =
-                connection.parentFolderId() == null ? root : groups().findGroup(root, connection.parentFolderId());
-        if (parent == null) throw new VaultException("Parent folder is missing");
-        JacksonEntry entry = entryStore().find(connection.id()).orElse(null);
-        if (entry != null && !KdbxEntries.hasRole(entry, HOST))
-            throw new VaultException("Host ID conflicts with an identity");
-        if (entry == null) {
-            entry = database.newEntry();
-            entry.setProperty(ID, connection.id().toString());
-        } else {
-            entry.getParent().removeEntry(entry);
-        }
-        KdbxConnectionMapper.write(entry, connection);
-        parent.addEntry(entry);
-        pruneHostSecrets(connection.id(), connection);
+        connectionStore().put(connection);
     }
 
     public synchronized void deleteConnection(UUID id) throws VaultException {
-        JacksonEntry entry = entryStore().find(id).orElse(null);
-        if (entry == null || !KdbxEntries.hasRole(entry, HOST)) throw new VaultException("Host is missing");
-        entry.getParent().removeEntry(entry);
-        pruneHostSecrets(id, null);
+        requireUnlocked();
+        connectionStore().delete(id);
     }
 
     private KdbxManagedGroups groups() throws VaultException {
@@ -443,6 +371,11 @@ public final class KdbxVault implements WorkspaceVault {
     private KdbxEntries entryStore() throws VaultException {
         requireUnlocked();
         return new KdbxEntries(database);
+    }
+
+    private KdbxConnectionStore connectionStore() throws VaultException {
+        requireUnlocked();
+        return new KdbxConnectionStore(database);
     }
 
     private void requireUnlocked() throws VaultException {
