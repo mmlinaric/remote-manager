@@ -4,19 +4,14 @@ import com.mmlinaric.remotemanager.model.Connection;
 import com.mmlinaric.remotemanager.model.ConnectionFolder;
 import com.mmlinaric.remotemanager.persistence.FolderExpansionPreferences;
 import com.mmlinaric.remotemanager.persistence.SettingsRepository;
-import com.mmlinaric.remotemanager.ui.connections.ConnectionEditor;
 import com.mmlinaric.remotemanager.ui.connections.ConnectionTreePanel;
 import com.mmlinaric.remotemanager.ui.settings.AppSettings;
 import com.mmlinaric.remotemanager.ui.settings.SettingsDialog;
 import com.mmlinaric.remotemanager.ui.terminal.SessionTabs;
-import com.mmlinaric.remotemanager.ui.vault.IdentityEditor;
 import com.mmlinaric.remotemanager.update.UpdateController;
-import com.mmlinaric.remotemanager.vault.IdentityDraft;
-import com.mmlinaric.remotemanager.vault.VaultAttachment;
 import com.mmlinaric.remotemanager.vault.VaultEntry;
 import com.mmlinaric.remotemanager.vault.WorkspaceVault;
 import com.mmlinaric.remotemanager.vault.kdbx.KdbxVault;
-import com.mmlinaric.remotemanager.workspace.HostSubmissionPersistence;
 import com.mmlinaric.remotemanager.workspace.VaultWorkspace;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
@@ -33,10 +28,7 @@ import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.beans.PropertyChangeListener;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import javax.swing.AbstractAction;
@@ -101,6 +93,7 @@ public final class MainWindow extends JFrame {
     private boolean detailsHeightInitialized;
     private boolean connectionsLoaded;
     private long operationVersion;
+    private final WorkspaceEditorController workspaceEditor;
     private final SessionLaunchController sessionLauncher = new SessionLaunchController(
             this,
             connectionTree,
@@ -118,6 +111,15 @@ public final class MainWindow extends JFrame {
         this.folderExpansion = new FolderExpansionPreferences(settings);
         this.preferences = AppSettings.load(settings);
         this.initialSidebarWidth = windowPreferences.sidebarWidth();
+        this.workspaceEditor = new WorkspaceEditorController(
+                this,
+                connectionTree,
+                identities,
+                () -> !locked && !savingVault,
+                () -> vault,
+                mutation -> mutateAndReveal(mutation::apply),
+                this::showError,
+                this::showErrorLater);
         this.workspaceLayout = new WorkspaceLayout(
                 connectionTree,
                 identities,
@@ -465,13 +467,6 @@ public final class MainWindow extends JFrame {
                 }));
     }
 
-    private CompletableFuture<Void> mutate(VaultAction action, UUID revealId) {
-        return mutateAndReveal(selected -> {
-            action.run(selected);
-            return revealId;
-        });
-    }
-
     private CompletableFuture<Void> mutateAndReveal(VaultMutation action) {
         if (locked || vault == null)
             return CompletableFuture.failedFuture(new IllegalStateException("Vault is locked"));
@@ -497,129 +492,39 @@ public final class MainWindow extends JFrame {
     }
 
     private void editHost(Connection current, UUID parent) {
-        if (locked || savingVault) return;
-        if (current == null && parent == null && connectionTree.selectedValue() instanceof ConnectionFolder folder)
-            parent = folder.id();
-        try {
-            ConnectionEditor editor = new ConnectionEditor(
-                    this,
-                    current,
-                    parent,
-                    connectionTree.folders(),
-                    vault.entries(),
-                    vault.credentialEntries(),
-                    submission -> saveHost(submission));
-            editor.setVisible(true);
-        } catch (Exception error) {
-            showError("Could not open host editor", error);
-        }
-    }
-
-    private CompletableFuture<Void> saveHost(ConnectionEditor.Submission submission) {
-        HostSubmissionPersistence persistence = HostSubmissionPersistence.prepare(submission);
-        return mutate(persistence::saveTo, persistence.connection().id())
-                .whenComplete((ignored, error) -> persistence.close());
+        workspaceEditor.editHost(current, parent);
     }
 
     private void editSelectedHost() {
-        if (connectionTree.selectedValue() instanceof Connection host) editHost(host, host.parentFolderId());
-        else if (connectionTree.selectedValue() instanceof ConnectionFolder folder) renameFolder(folder);
+        workspaceEditor.editSelectedHost();
     }
 
     private void deleteSelectedHost() {
-        deleteItem(connectionTree.selectedValue());
+        workspaceEditor.deleteSelectedHost();
     }
 
     private void newFolder(ConnectionFolder parent) {
-        if (locked || savingVault) return;
-        String name = JOptionPane.showInputDialog(this, "Folder name:");
-        if (name == null || name.isBlank()) return;
-        createFolder(parent, name.trim());
+        workspaceEditor.newFolder(parent);
     }
 
     private void createFolder(ConnectionFolder parent, String name) {
-        if (locked || savingVault) return;
-        mutateAndReveal(v -> v.createFolder(parent == null ? null : parent.id(), name))
-                .exceptionally(error -> {
-                    showErrorLater("Could not save folder", error);
-                    return null;
-                });
+        workspaceEditor.createFolder(parent, name);
     }
 
     private void renameFolder(ConnectionFolder folder) {
-        if (locked || savingVault) return;
-        String name = JOptionPane.showInputDialog(this, "Folder name:", folder.name());
-        if (name == null || name.isBlank()) return;
-        mutate(v -> v.renameFolder(folder.id(), name.trim()), folder.id()).exceptionally(error -> {
-            showErrorLater("Could not rename folder", error);
-            return null;
-        });
+        workspaceEditor.renameFolder(folder);
     }
 
     private void deleteItem(Object selected) {
-        if (locked || savingVault || selected == null) return;
-        if (JOptionPane.showConfirmDialog(
-                        this, "Delete " + selected + "?", "Confirm deletion", JOptionPane.YES_NO_OPTION)
-                != JOptionPane.YES_OPTION) return;
-        mutate(
-                        v -> {
-                            if (selected instanceof Connection host) v.deleteConnection(host.id());
-                            else if (selected instanceof ConnectionFolder folder) v.deleteFolder(folder.id());
-                        },
-                        null)
-                .exceptionally(error -> {
-                    showErrorLater("Could not delete", error);
-                    return null;
-                });
+        workspaceEditor.deleteItem(selected);
     }
 
     private void editIdentity(VaultEntry current) {
-        if (locked || savingVault) return;
-        IdentityEditor.editAndSave(
-                this,
-                current,
-                change -> mutate(
-                        v -> {
-                            byte[] attachment = change.attachmentPath() == null
-                                    ? null
-                                    : Files.readAllBytes(change.attachmentPath());
-                            IdentityDraft draft = new IdentityDraft(
-                                    change.title(),
-                                    change.username(),
-                                    change.password(),
-                                    Map.of(),
-                                    new VaultAttachment(change.attachmentName(), attachment));
-                            try {
-                                if (current == null) v.addIdentity(draft);
-                                else v.updateIdentity(current.id(), draft);
-                            } finally {
-                                draft.clearSecrets();
-                                if (attachment != null) Arrays.fill(attachment, (byte) 0);
-                            }
-                        },
-                        null));
+        workspaceEditor.editIdentity(current);
     }
 
     private void deleteIdentity() {
-        VaultEntry selected = identities.getSelectedValue();
-        if (locked || savingVault || selected == null) return;
-        boolean used = connectionTree.connections().stream()
-                .anyMatch(host -> selected.id().equals(host.sshCredentialEntryId())
-                        || selected.id().equals(host.sudoCredentialEntryId()));
-        if (used) {
-            JOptionPane.showMessageDialog(this, "This identity is used by a host. Reassign that host first.");
-            return;
-        }
-        if (JOptionPane.showConfirmDialog(
-                        this,
-                        "Delete identity " + selected.title() + " from the vault?",
-                        "Confirm deletion",
-                        JOptionPane.YES_NO_OPTION)
-                != JOptionPane.YES_OPTION) return;
-        mutate(v -> v.deleteIdentity(selected.id()), null).exceptionally(error -> {
-            showErrorLater("Could not delete identity", error);
-            return null;
-        });
+        workspaceEditor.deleteIdentity();
     }
 
     private void quickConnect() {
@@ -761,11 +666,6 @@ public final class MainWindow extends JFrame {
         while (cause.getCause() != null) cause = cause.getCause();
         JOptionPane.showMessageDialog(
                 this, message + ": " + cause.getMessage(), "Remote Manager", JOptionPane.ERROR_MESSAGE);
-    }
-
-    @FunctionalInterface
-    private interface VaultAction {
-        void run(WorkspaceVault vault) throws Exception;
     }
 
     @FunctionalInterface
