@@ -5,8 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.example.remotemanager.persistence.SettingsRepository;
 import com.example.remotemanager.ui.main.MainWindow;
-import java.awt.GraphicsEnvironment;
 import java.awt.Frame;
+import java.awt.GraphicsEnvironment;
+import java.awt.Toolkit;
 import java.nio.file.Path;
 import javax.swing.SwingUtilities;
 import org.junit.jupiter.api.Assumptions;
@@ -24,8 +25,10 @@ class MainWindowTest {
         try {
           window.setVisible(true);
           assertFalse(window.getJMenuBar().getMenu(0).getItem(0).isEnabled());
-          assertEquals(Frame.MAXIMIZED_BOTH,
-              window.getExtendedState() & Frame.MAXIMIZED_BOTH);
+          if (Toolkit.getDefaultToolkit().isFrameStateSupported(Frame.MAXIMIZED_BOTH)) {
+            assertEquals(Frame.MAXIMIZED_BOTH,
+                window.getExtendedState() & Frame.MAXIMIZED_BOTH);
+          }
         } finally { window.dispose(); }
       } catch (Exception error) { throw new RuntimeException(error); }
     });
