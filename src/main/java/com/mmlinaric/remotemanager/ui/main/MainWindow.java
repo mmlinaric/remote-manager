@@ -30,7 +30,6 @@ import java.awt.Dialog;
 import java.awt.Dimension;
 import java.awt.FileDialog;
 import java.awt.FlowLayout;
-import java.awt.GridBagLayout;
 import java.awt.KeyboardFocusManager;
 import java.awt.Toolkit;
 import java.awt.Window;
@@ -52,7 +51,6 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
-import javax.swing.DefaultListCellRenderer;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
@@ -66,11 +64,8 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JProgressBar;
-import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
-import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
-import javax.swing.JToolBar;
 import javax.swing.KeyStroke;
 import javax.swing.LayoutFocusTraversalPolicy;
 import javax.swing.SwingUtilities;
@@ -111,8 +106,9 @@ public final class MainWindow extends JFrame {
         if (event.getNewValue() instanceof JButton button) button.setFocusPainted(false);
     };
     private final ConnectionTreePanel connectionTree = new ConnectionTreePanel(new TreeActions());
+    private final WorkspaceLayout workspaceLayout;
     private final JSplitPane workspace;
-    private JSplitPane hosts;
+    private final JSplitPane hosts;
     private final int initialSidebarWidth;
     private final int initialDetailsHeight;
     private int detailsHeight;
@@ -133,7 +129,29 @@ public final class MainWindow extends JFrame {
         this.folderExpansion = new FolderExpansionPreferences(settings);
         this.preferences = AppSettings.load(settings);
         this.initialSidebarWidth = windowPreferences.sidebarWidth();
-        this.workspace = createWorkspace();
+        this.workspaceLayout = new WorkspaceLayout(
+                connectionTree,
+                identities,
+                identityHint,
+                quickConnect,
+                tabs,
+                actionAvailability,
+                new WorkspaceLayout.Actions(
+                        () -> editHost(null, null),
+                        () -> editIdentity(null),
+                        this::quickConnect,
+                        this::lockVault,
+                        this::editIdentity,
+                        this::deleteIdentity,
+                        tabs::copySudoPassword));
+        this.workspace = workspaceLayout.workspace();
+        this.hosts = workspaceLayout.hosts();
+        this.copySudoButton = workspaceLayout.copySudoButton();
+        hosts.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, event -> {
+            if (detailsHeightInitialized && hosts.isShowing() && hosts.getHeight() > 0) {
+                detailsHeight = currentDetailsHeight();
+            }
+        });
         int savedDetailsHeight = windowPreferences.detailsHeight();
         this.initialDetailsHeight =
                 Math.max(savedDetailsHeight, connectionTree.details().getPreferredSize().height);
@@ -164,7 +182,7 @@ public final class MainWindow extends JFrame {
         createWelcomeButton = welcome.createButton();
         creationProgress = welcome.creationProgress();
         cards.add(welcome, "locked");
-        cards.add(workspacePanel(), "workspace");
+        cards.add(workspaceLayout.panel(), "workspace");
         add(cards, BorderLayout.CENTER);
         JPanel statusBar = new JPanel(new BorderLayout(12, 0));
         statusBar.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
@@ -183,91 +201,6 @@ public final class MainWindow extends JFrame {
                 closeWindow();
             }
         });
-    }
-
-    private JPanel workspacePanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        JToolBar toolbar = new JToolBar();
-        toolbar.setFloatable(false);
-        toolbar.add(actionAvailability.vaultButton("New host", SilkIcons.NEW_CONNECTION, () -> editHost(null, null)));
-        toolbar.add(actionAvailability.vaultButton("New identity", SilkIcons.NEW_IDENTITY, () -> editIdentity(null)));
-        toolbar.addSeparator();
-        toolbar.add(new JLabel("Host: "));
-        toolbar.add(quickConnect);
-        toolbar.add(actionAvailability.vaultButton("Connect", SilkIcons.CONNECT, this::quickConnect));
-        toolbar.addSeparator();
-        toolbar.add(actionAvailability.vaultButton("Lock", SilkIcons.LOCK, this::lockVault));
-        panel.add(toolbar, BorderLayout.NORTH);
-        panel.add(workspace, BorderLayout.CENTER);
-        return panel;
-    }
-
-    private JSplitPane createWorkspace() {
-        JTabbedPane sidebar = new JTabbedPane();
-        sidebar.setMinimumSize(new Dimension(190, 0));
-        hosts = new JSplitPane(JSplitPane.VERTICAL_SPLIT, connectionTree, connectionTree.details());
-        hosts.setContinuousLayout(true);
-        hosts.setResizeWeight(1.0);
-        hosts.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, event -> {
-            if (detailsHeightInitialized && hosts.isShowing() && hosts.getHeight() > 0)
-                detailsHeight = currentDetailsHeight();
-        });
-        sidebar.addTab("Hosts", SilkIcons.CONNECTION, hosts);
-        JPanel identityPanel = new JPanel(new BorderLayout());
-        identities.setCellRenderer(new DefaultListCellRenderer() {
-            @Override
-            public Component getListCellRendererComponent(
-                    JList<?> list, Object value, int index, boolean selected, boolean focused) {
-                VaultEntry entry = (VaultEntry) value;
-                String text = entry == null
-                        ? ""
-                        : entry.title()
-                                + (entry.username() == null || entry.username().isBlank()
-                                        ? ""
-                                        : "  (" + entry.username() + ")")
-                                + (entry.hasPassword() ? "  [password]" : "")
-                                + (entry.attachments().isEmpty() ? "" : "  [key/file]");
-                super.getListCellRendererComponent(list, text, index, selected, focused);
-                setIcon(SilkIcons.VAULT);
-                return this;
-            }
-        });
-        identities.addMouseListener(new java.awt.event.MouseAdapter() {
-            @Override
-            public void mouseClicked(java.awt.event.MouseEvent event) {
-                if (!savingVault && event.getClickCount() == 2 && identities.getSelectedValue() != null)
-                    editIdentity(identities.getSelectedValue());
-            }
-        });
-        identityPanel.add(identityHint, BorderLayout.NORTH);
-        identityPanel.add(new JScrollPane(identities), BorderLayout.CENTER);
-        JPanel identityActions = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        identityActions.add(actionAvailability.vaultButton("New", SilkIcons.NEW_IDENTITY, () -> editIdentity(null)));
-        identityActions.add(actionAvailability.selectedIdentityButton(
-                "Edit", SilkIcons.EDIT, () -> editIdentity(identities.getSelectedValue())));
-        identityActions.add(
-                actionAvailability.selectedIdentityButton("Delete", SilkIcons.DELETE, this::deleteIdentity));
-        identityPanel.add(identityActions, BorderLayout.SOUTH);
-        sidebar.addTab("Identities", SilkIcons.VAULT, identityPanel);
-        JPanel right = new JPanel(new CardLayout());
-        JPanel empty = new JPanel(new GridBagLayout());
-        empty.add(new JLabel("Double-click a host to open an SSH session."));
-        JPanel sessionPanel = new JPanel(new BorderLayout());
-        JPanel sessionActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 2));
-        copySudoButton = button("Copy sudo password", SilkIcons.COPY_PASSWORD, tabs::copySudoPassword);
-        copySudoButton.setToolTipText("Copy the active session's sudo password");
-        sessionActions.add(copySudoButton);
-        sessionPanel.add(sessionActions, BorderLayout.NORTH);
-        sessionPanel.add(tabs, BorderLayout.CENTER);
-        right.add(empty, "empty");
-        right.add(sessionPanel, "tabs");
-        tabs.addChangeListener(
-                event -> ((CardLayout) right.getLayout()).show(right, tabs.getTabCount() == 0 ? "empty" : "tabs"));
-        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sidebar, right);
-        right.setMinimumSize(new Dimension(300, 0));
-        split.setContinuousLayout(true);
-        split.setResizeWeight(0);
-        return split;
     }
 
     private JMenuBar menu() {
@@ -338,12 +271,6 @@ public final class MainWindow extends JFrame {
                         JOptionPane.INFORMATION_MESSAGE)));
         bar.add(help);
         return bar;
-    }
-
-    private static JButton button(String title, javax.swing.Icon icon, Runnable action) {
-        JButton button = new JButton(title, icon);
-        button.addActionListener(event -> action.run());
-        return button;
     }
 
     private static JMenu topMenu(String title) {
