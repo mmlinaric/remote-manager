@@ -3,7 +3,11 @@ $ErrorActionPreference = "Stop"
 $ProjectDir = Split-Path -Parent $PSScriptRoot
 Set-Location $ProjectDir
 
-$Version = (& .\mvnw.cmd help:evaluate -Dexpression=project.version -q -DforceStdout).Trim()
+[xml]$Pom = Get-Content -Raw (Join-Path $ProjectDir "pom.xml")
+$Version = $Pom.project.version.Trim()
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    throw "Could not read the project version from pom.xml."
+}
 if ($Version.EndsWith("-SNAPSHOT")) {
     throw "Release packaging requires a non-SNAPSHOT Maven version (found $Version)."
 }

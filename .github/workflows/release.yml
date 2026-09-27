@@ -48,7 +48,9 @@ jobs:
       - name: Verify tag matches Maven version
         shell: pwsh
         run: |
-          $version = (& .\mvnw.cmd help:evaluate -Dexpression=project.version -q -DforceStdout).Trim()
+          [xml]$pom = Get-Content -Raw .\pom.xml
+          $version = $pom.project.version.Trim()
+          if ([string]::IsNullOrWhiteSpace($version)) { throw "Could not read the project version from pom.xml" }
           if ("v$version" -ne $env:GITHUB_REF_NAME) { throw "Tag does not match Maven version $version" }
       - name: Install WiX Toolset
         shell: pwsh
@@ -77,4 +79,9 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" artifacts/**/* --verify-tag --generate-notes --title "Remote Manager ${GITHUB_REF_NAME#v}"
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" artifacts/**/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" artifacts/**/* --verify-tag --generate-notes --title "Remote Manager ${GITHUB_REF_NAME#v}"
+          fi
