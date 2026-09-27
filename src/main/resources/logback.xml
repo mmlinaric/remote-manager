@@ -6,7 +6,7 @@
         </encoder>
     </appender>
 
-    <logger name="com.example.remotemanager" level="INFO"/>
+    <logger name="com.mmlinaric.remotemanager" level="INFO"/>
     <root level="WARN">
         <appender-ref ref="STDERR"/>
     </root>

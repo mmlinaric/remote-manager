@@ -31,7 +31,7 @@ $Common = @(
     "--description", "SSH connection manager backed by a KeePass vault",
     "--input", $InputDir,
     "--main-jar", "remote-manager-$Version.jar",
-    "--main-class", "com.example.remotemanager.app.Main",
+    "--main-class", "com.mmlinaric.remotemanager.app.Main",
     "--java-options", "--enable-native-access=ALL-UNNAMED",
     "--icon", (Join-Path $ProjectDir "src\main\resources\icons\app\remote-manager.ico"),
     "--dest", $DistDir

@@ -27,7 +27,7 @@ common=(
   --description "SSH connection manager backed by a KeePass vault"
   --input "$input_dir"
   --main-jar "remote-manager-$version.jar"
-  --main-class "com.example.remotemanager.app.Main"
+  --main-class "com.mmlinaric.remotemanager.app.Main"
   --java-options "--enable-native-access=ALL-UNNAMED"
   --icon "$project_dir/src/main/resources/icons/app/remote-manager.png"
   --dest "$dist_dir"
