@@ -18,4 +18,7 @@ jobs:
           distribution: temurin
           java-version: "25"
           cache: maven
-      - run: ./mvnw --batch-mode test
+      - name: Install virtual display
+        run: sudo apt-get update && sudo apt-get install --yes xvfb xauth
+      - name: Run tests
+        run: xvfb-run --auto-servernum ./mvnw --batch-mode test
