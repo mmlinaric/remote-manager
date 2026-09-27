@@ -31,7 +31,6 @@ import java.awt.Dimension;
 import java.awt.FileDialog;
 import java.awt.FlowLayout;
 import java.awt.GridBagLayout;
-import java.awt.KeyEventDispatcher;
 import java.awt.KeyboardFocusManager;
 import java.awt.Toolkit;
 import java.awt.Window;
@@ -107,7 +106,7 @@ public final class MainWindow extends JFrame {
     private AppSettings preferences;
     private final SessionTabs tabs =
             new SessionTabs(() -> vault, this::sessionReady, this::showStatus, () -> preferences, this::currentHost);
-    private final KeyEventDispatcher terminalFontKeys = this::dispatchTerminalFontKey;
+    private final TerminalFontKeyDispatcher terminalFontKeys = new TerminalFontKeyDispatcher(tabs);
     private final PropertyChangeListener buttonFocus = event -> {
         if (event.getNewValue() instanceof JButton button) button.setFocusPainted(false);
     };
@@ -932,36 +931,6 @@ public final class MainWindow extends JFrame {
                 copySudoForFocusedContext();
             }
         });
-    }
-
-    private boolean dispatchTerminalFontKey(KeyEvent event) {
-        Component selected = tabs.getSelectedComponent();
-        Component source = event.getComponent();
-        int shortcut = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
-        if (selected == null
-                || source == null
-                || !SwingUtilities.isDescendingFrom(source, selected)
-                || (event.getModifiersEx() & shortcut) == 0) return false;
-
-        int change =
-                switch (event.getKeyCode()) {
-                    case KeyEvent.VK_EQUALS, KeyEvent.VK_PLUS, KeyEvent.VK_ADD -> 1;
-                    case KeyEvent.VK_MINUS, KeyEvent.VK_SUBTRACT -> -1;
-                    case KeyEvent.VK_0 -> 0;
-                    default -> Integer.MIN_VALUE;
-                };
-        if (event.getID() == KeyEvent.KEY_TYPED) {
-            char character = event.getKeyChar();
-            if (character != '+' && character != '=' && character != '-' && character != '0') return false;
-        } else if (change == Integer.MIN_VALUE) {
-            return false;
-        }
-        if (event.getID() == KeyEvent.KEY_PRESSED) {
-            if (change == 0) tabs.resetFontSize();
-            else tabs.changeFontSize(change);
-        }
-        event.consume();
-        return true;
     }
 
     private void copySudoForFocusedContext() {
