@@ -4,14 +4,30 @@ A classic Swing SSH connection manager with reusable identities in a normal KDBX
 
 ## Build and run
 
-Install Java 25, then run:
+Install Java 25, open a terminal in the repository directory, and use the commands for your operating system.
+
+Linux:
 
 ```sh
 ./mvnw test
-./mvnw exec:exec
+./mvnw compile exec:exec
 ```
 
-On Windows, use `mvnw.cmd`. The app uses the system Swing look and feel.
+Windows PowerShell:
+
+```powershell
+.\mvnw.cmd test
+.\mvnw.cmd compile exec:exec
+```
+
+Windows Command Prompt:
+
+```bat
+mvnw.cmd test
+mvnw.cmd compile exec:exec
+```
+
+The app uses the system Swing look and feel.
 
 ## Install and update
 
