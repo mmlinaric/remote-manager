@@ -23,7 +23,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.linguafranca.pwdb.kdbx.jackson.JacksonDatabase;
-import org.linguafranca.pwdb.kdbx.jackson.JacksonEntry;
 
 /** KeePassJava2 adapter for the app's KDBX4 workspace. */
 public final class KdbxVault implements WorkspaceVault {
@@ -92,22 +91,13 @@ public final class KdbxVault implements WorkspaceVault {
 
     @Override
     public synchronized List<VaultEntry> entries() throws VaultException {
-        KdbxEntries entryStore = entryStore();
-        return entryStore.all().stream()
-                .filter(entry -> !KdbxEntries.hasRole(entry, HOST)
-                        && !KdbxEntries.hasRole(entry, HOST_SECRET)
-                        && !KdbxEntries.hasRole(entry, MARKER))
-                .map(entryStore::summary)
-                .sorted((a, b) -> a.toString().compareToIgnoreCase(b.toString()))
-                .toList();
+        requireUnlocked();
+        return entryReader().identities();
     }
 
     public synchronized List<VaultEntry> credentialEntries() throws VaultException {
-        KdbxEntries entryStore = entryStore();
-        return entryStore.all().stream()
-                .filter(entry -> !KdbxEntries.hasRole(entry, HOST) && !KdbxEntries.hasRole(entry, MARKER))
-                .map(entryStore::summary)
-                .toList();
+        requireUnlocked();
+        return entryReader().credentials();
     }
 
     public static boolean isHostSecret(VaultEntry entry, UUID ownerHostId, String purpose) {
@@ -116,28 +106,20 @@ public final class KdbxVault implements WorkspaceVault {
 
     @Override
     public synchronized Optional<VaultEntry> getEntry(UUID id) throws VaultException {
-        KdbxEntries entryStore = entryStore();
-        return entryStore.find(id).map(entryStore::summary);
+        requireUnlocked();
+        return entryReader().entry(id);
     }
 
     @Override
     public synchronized Optional<char[]> getPassword(UUID id) throws VaultException {
-        return entryStore()
-                .find(id)
-                .map(entry -> entry.getPropertyValue("Password"))
-                .filter(value -> value != null)
-                .map(value -> value.getValueAsChars())
-                .filter(value -> value.length != 0);
+        requireUnlocked();
+        return entryReader().password(id);
     }
 
     @Override
     public synchronized Optional<byte[]> getAttachment(UUID id, String attachmentName) throws VaultException {
-        JacksonEntry entry = entryStore().find(id).orElseThrow(() -> new VaultException("KeePass entry is missing"));
-        try {
-            return Optional.ofNullable(entry.getBinaryProperty(attachmentName));
-        } catch (Exception error) {
-            throw new VaultException("Could not read KeePass attachment", error);
-        }
+        requireUnlocked();
+        return entryReader().attachment(id, attachmentName);
     }
 
     public synchronized UUID addEntry(
@@ -332,6 +314,11 @@ public final class KdbxVault implements WorkspaceVault {
     private KdbxEntries entryStore() throws VaultException {
         requireUnlocked();
         return new KdbxEntries(database);
+    }
+
+    private KdbxEntryReader entryReader() throws VaultException {
+        requireUnlocked();
+        return new KdbxEntryReader(database);
     }
 
     private KdbxConnectionStore connectionStore() throws VaultException {

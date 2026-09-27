@@ -100,6 +100,14 @@ public final class MainWindow extends JFrame {
     private boolean detailsHeightInitialized;
     private boolean connectionsLoaded;
     private long operationVersion;
+    private final SessionLaunchController sessionLauncher = new SessionLaunchController(
+            this,
+            connectionTree,
+            tabs,
+            quickConnect,
+            () -> !locked && !savingVault,
+            host -> editHost(host, host.parentFolderId()),
+            this::showStatus);
 
     public MainWindow(SettingsRepository settings) {
         super("Remote Manager");
@@ -616,25 +624,11 @@ public final class MainWindow extends JFrame {
     }
 
     private void quickConnect() {
-        if (locked || savingVault) return;
-        String target = quickConnect.getText().trim();
-        Connection selected = connectionTree.selectedValue() instanceof Connection host ? host : null;
-        Connection match = target.isBlank()
-                ? selected
-                : connectionTree.connections().stream()
-                        .filter(host -> host.name().equalsIgnoreCase(target)
-                                || host.hostname().equalsIgnoreCase(target))
-                        .findFirst()
-                        .orElse(null);
-        if (match == null) {
-            showStatus("Select a host or enter a saved host name.");
-            return;
-        }
-        openHost(match);
+        sessionLauncher.quickConnect();
     }
 
     private void connectSelected() {
-        if (!locked && !savingVault && connectionTree.selectedValue() instanceof Connection host) openHost(host);
+        sessionLauncher.connectSelected();
     }
 
     private void installSudoShortcut() {
@@ -668,19 +662,7 @@ public final class MainWindow extends JFrame {
     }
 
     private void openHost(Connection host) {
-        if (locked || savingVault) return;
-        String issue = connectionTree.issue(host);
-        if (issue != null) {
-            int choice = JOptionPane.showConfirmDialog(
-                    this,
-                    "This host has a missing credential: " + issue + ".\nEdit the host now?",
-                    "Host needs attention",
-                    JOptionPane.YES_NO_OPTION,
-                    JOptionPane.WARNING_MESSAGE);
-            if (choice == JOptionPane.YES_OPTION) editHost(host, host.parentFolderId());
-            return;
-        }
-        tabs.open(host);
+        sessionLauncher.open(host);
     }
 
     private void editSettings() {
