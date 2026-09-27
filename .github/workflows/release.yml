@@ -83,5 +83,5 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" artifacts/**/* --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$GITHUB_REF_NAME" artifacts/**/* --verify-tag --generate-notes --title "Remote Manager ${GITHUB_REF_NAME#v}" --repo "$GITHUB_REPOSITORY"
+            gh release create "$GITHUB_REF_NAME" artifacts/**/* --verify-tag --generate-notes --prerelease --title "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"
           fi
