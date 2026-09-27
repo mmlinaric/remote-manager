@@ -342,70 +342,34 @@ public final class ConnectionEditor extends JDialog {
             VaultEntry selectedSudo = (VaultEntry) sudoCredential.getSelectedItem();
             boolean directSsh =
                     selectedAuth == AuthenticationType.PASSWORD && sshSource.getSelectedItem() == PasswordSource.HOST;
-            boolean usesSshIdentity = selectedAuth == AuthenticationType.KDBX_PRIVATE_KEY
-                    || (selectedAuth == AuthenticationType.PASSWORD && !directSsh);
             boolean directSudo = sudoSource.getSelectedItem() == SudoSource.HOST;
             boolean usesSudoIdentity = sudoSource.getSelectedItem() == SudoSource.IDENTITY;
-            if (directSsh && sshDirectId == null && sshSecret.length == 0)
-                throw new IllegalArgumentException("Enter an SSH password for this host.");
-            if (directSudo && sudoDirectId == null && sudoSecret.length == 0)
-                throw new IllegalArgumentException("Enter a sudo password for this host.");
-            if (usesSshIdentity && selectedSsh == null)
-                throw new IllegalArgumentException("Choose or create an SSH identity.");
-            if (usesSudoIdentity && selectedSudo == null)
-                throw new IllegalArgumentException("Choose or create a sudo identity.");
-            if (usesSshIdentity
-                    && !drafts.containsKey(selectedSsh.id())
-                    && !availableIdentities.contains(selectedSsh.id()))
-                throw new IllegalArgumentException("The selected SSH identity is missing.");
-            if (usesSudoIdentity
-                    && !drafts.containsKey(selectedSudo.id())
-                    && !availableIdentities.contains(selectedSudo.id()))
-                throw new IllegalArgumentException("The selected sudo identity is missing.");
-            if (selectedAuth == AuthenticationType.PASSWORD && usesSshIdentity && !selectedSsh.hasPassword())
-                throw new IllegalArgumentException("This identity has no SSH password.");
-            if (usesSudoIdentity && !selectedSudo.hasPassword())
-                throw new IllegalArgumentException("The sudo identity has no password.");
-            if (selectedAuth == AuthenticationType.KDBX_PRIVATE_KEY && (String) attachment.getSelectedItem() == null)
-                throw new IllegalArgumentException("Choose an identity with a private key attachment.");
-            Map<UUID, IdentityEditor.Change> usedDrafts = new LinkedHashMap<>();
-            if (usesSshIdentity && drafts.containsKey(selectedSsh.id()))
-                usedDrafts.put(selectedSsh.id(), drafts.get(selectedSsh.id()));
-            if (usesSudoIdentity && drafts.containsKey(selectedSudo.id()))
-                usedDrafts.put(selectedSudo.id(), drafts.get(selectedSudo.id()));
-            UUID hostId = current == null ? UUID.randomUUID() : current.id();
-            UUID sshId = directSsh
-                    ? sshDirectId == null ? UUID.randomUUID() : sshDirectId
-                    : usesSshIdentity ? selectedSsh.id() : null;
-            UUID sudoId = directSudo
-                    ? sudoDirectId == null ? UUID.randomUUID() : sudoDirectId
-                    : usesSudoIdentity ? selectedSudo.id() : null;
-            Map<UUID, HostPassword> hostPasswords = new LinkedHashMap<>();
-            if (directSsh) hostPasswords.put(sshId, new HostPassword("ssh", sshSecret.length == 0 ? null : sshSecret));
-            if (directSudo)
-                hostPasswords.put(sudoId, new HostPassword("sudo", sudoSecret.length == 0 ? null : sudoSecret));
-            Connection result = new Connection(
-                    hostId,
+            ConnectionSubmissionBuilder.Input input = new ConnectionSubmissionBuilder.Input(
+                    current,
                     name.getText().trim(),
                     host.getText().trim(),
                     (Integer) port.getValue(),
                     user.getText().trim(),
                     selectedFolder == null ? null : selectedFolder.id(),
                     selectedAuth,
-                    sshId,
-                    sudoId,
-                    selectedAuth == AuthenticationType.KDBX_PRIVATE_KEY ? (String) attachment.getSelectedItem() : null,
-                    selectedAuth == AuthenticationType.PRIVATE_KEY_FILE
-                            ? keyFile.getText().trim()
-                            : null,
-                    notes.getText(),
-                    current == null ? 0 : current.sortOrder());
+                    directSsh,
+                    selectedSsh,
+                    sshDirectId,
+                    directSudo,
+                    usesSudoIdentity,
+                    selectedSudo,
+                    sudoDirectId,
+                    (String) attachment.getSelectedItem(),
+                    keyFile.getText().trim(),
+                    notes.getText());
+            Submission submission =
+                    new ConnectionSubmissionBuilder(availableIdentities, drafts).build(input, sshSecret, sudoSecret);
             save.setEnabled(false);
             cancel.setEnabled(false);
             setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
             hint.setText("Saving host to vault...");
             saveAction
-                    .apply(new Submission(result, usedDrafts, hostPasswords))
+                    .apply(submission)
                     .whenComplete((ignored, error) -> SwingUtilities.invokeLater(() -> {
                         if (error == null) {
                             dispose();
