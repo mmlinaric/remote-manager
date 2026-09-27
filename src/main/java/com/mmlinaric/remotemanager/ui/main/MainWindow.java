@@ -36,7 +36,6 @@ import java.beans.PropertyChangeListener;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -85,6 +84,8 @@ public final class MainWindow extends JFrame {
         if (event.getNewValue() instanceof JButton button) button.setFocusPainted(false);
     };
     private final ConnectionTreePanel connectionTree = new ConnectionTreePanel(new TreeActions());
+    private final WorkspaceDataPresenter workspaceData =
+            new WorkspaceDataPresenter(connectionTree, identities, identityHint);
     private final WorkspaceLayout workspaceLayout;
     private final JSplitPane workspace;
     private final JSplitPane hosts;
@@ -412,11 +413,8 @@ public final class MainWindow extends JFrame {
         connectionsLoaded = false;
         for (Window child : getOwnedWindows()) if (child.isVisible()) child.dispose();
         tabs.closeAll();
-        connectionTree.clear();
-        connectionTree.setIdentities(List.of());
+        workspaceData.clear();
         quickConnect.setText("");
-        identities.setListData(new VaultEntry[0]);
-        identityHint.setText("  No identities yet. Create one here or while adding a host.");
         showLocked();
         setSavingVault(false);
         VaultWorkspace currentWorkspace = workspace();
@@ -451,15 +449,8 @@ public final class MainWindow extends JFrame {
                         showError("Could not read vault", error);
                         return;
                     }
-                    connectionTree.setIdentities(data.credentials());
-                    connectionTree.showConnections(data.folders(), data.connections());
+                    workspaceData.show(data, revealId);
                     connectionsLoaded = true;
-                    identities.setListData(data.identities().toArray(VaultEntry[]::new));
-                    identityHint.setText(
-                            data.identities().isEmpty()
-                                    ? "  No identities yet. Create one here or while adding a host."
-                                    : "  Reusable credentials in this vault");
-                    if (revealId != null) connectionTree.reveal(revealId);
                     if (saveResult != null) {
                         status.setText(saveResult);
                         setSavingVault(false);

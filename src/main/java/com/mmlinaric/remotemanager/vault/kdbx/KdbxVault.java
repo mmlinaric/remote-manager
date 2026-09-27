@@ -111,10 +111,7 @@ public final class KdbxVault implements WorkspaceVault {
     }
 
     public static boolean isHostSecret(VaultEntry entry, UUID ownerHostId, String purpose) {
-        return entry != null
-                && HOST_SECRET.equals(entry.fields().get(ROLE))
-                && ownerHostId.toString().equals(entry.fields().get(SECRET_OWNER))
-                && purpose.equals(entry.fields().get(SECRET_PURPOSE));
+        return KdbxHostSecretStore.belongsTo(entry, ownerHostId, purpose);
     }
 
     @Override
@@ -211,26 +208,7 @@ public final class KdbxVault implements WorkspaceVault {
             UUID id, UUID ownerHostId, String purpose, String title, String username, char[] password)
             throws VaultException {
         requireUnlocked();
-        if (!"ssh".equals(purpose) && !"sudo".equals(purpose))
-            throw new VaultException("Invalid host password purpose");
-        JacksonEntry entry = entryStore().find(id).orElse(null);
-        if (entry == null) {
-            if (password == null || password.length == 0) throw new VaultException("Enter a password for this host");
-            entry = database.newEntry();
-            entry.setProperty(ID, id.toString());
-            entry.setProperty(ROLE, HOST_SECRET);
-            entry.setProperty(SECRET_OWNER, ownerHostId.toString());
-            entry.setProperty(SECRET_PURPOSE, purpose);
-            entryStore().update(entry, title, username, password, null, null, null);
-            groups().getOrCreateRoot(HOST_SECRET_ROOT, "Remote Manager Host Passwords")
-                    .addEntry(entry);
-        } else {
-            if (!KdbxEntries.hasRole(entry, HOST_SECRET)
-                    || !ownerHostId.toString().equals(entry.getProperty(SECRET_OWNER))
-                    || !purpose.equals(entry.getProperty(SECRET_PURPOSE)))
-                throw new VaultException("Host password belongs to a different host");
-            entryStore().update(entry, title, username, password, null, null, null);
-        }
+        hostSecretStore().put(id, ownerHostId, purpose, title, username, password);
     }
 
     public synchronized List<ConnectionFolder> folders() throws VaultException {
@@ -364,6 +342,11 @@ public final class KdbxVault implements WorkspaceVault {
     private KdbxIdentityStore identityStore() throws VaultException {
         requireUnlocked();
         return new KdbxIdentityStore(database, this::connections);
+    }
+
+    private KdbxHostSecretStore hostSecretStore() throws VaultException {
+        requireUnlocked();
+        return new KdbxHostSecretStore(database);
     }
 
     private void requireUnlocked() throws VaultException {
