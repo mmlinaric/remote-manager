@@ -278,7 +278,7 @@ public final class SshRemoteSession implements RemoteSession {
         // There is no further network resource to release.
       }
     }
-    SwingUtilities.invokeLater(terminal::stop);
+    SwingUtilities.invokeLater(terminal::close);
   }
 
   @Override

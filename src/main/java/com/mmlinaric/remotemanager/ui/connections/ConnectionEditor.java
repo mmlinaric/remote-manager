@@ -106,7 +106,7 @@ public final class ConnectionEditor extends JDialog {
     super(owner, current == null ? "New host" : "Edit host", ModalityType.APPLICATION_MODAL);
     this.saveAction = saveAction;
     this.folders = List.copyOf(folders);
-    this.availableIdentities = entries.stream().map(VaultEntry::id).collect(Collectors.toSet());
+    this.availableIdentities = entries.stream().map(entry -> entry.id()).collect(Collectors.toSet());
     credentials.forEach(entry -> credentialsById.put(entry.id(), entry));
     setLayout(new BorderLayout(8, 8));
     sshCredential.addItem(null);
@@ -360,7 +360,7 @@ public final class ConnectionEditor extends JDialog {
 
   @Override public void dispose() {
     sshPassword.setText(""); sudoPassword.setText("");
-    drafts.values().forEach(IdentityEditor.Change::clear);
+    drafts.values().forEach(change -> change.clear());
     super.dispose();
   }
 

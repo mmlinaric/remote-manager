@@ -21,12 +21,10 @@ public final class KnownHostsVerifier implements HostKeyVerifier {
     void warnChanged(String host, String oldFingerprint, String newFingerprint);
   }
 
-  private final Path file;
   private final Prompt prompt;
   private final OpenSSHKnownHosts knownHosts;
 
   public KnownHostsVerifier(Path file, Prompt prompt) throws IOException {
-    this.file = file;
     this.prompt = prompt;
     Files.createDirectories(file.toAbsolutePath().getParent());
     if (!Files.exists(file)) {

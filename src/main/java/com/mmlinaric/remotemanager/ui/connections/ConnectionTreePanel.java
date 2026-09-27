@@ -197,7 +197,7 @@ public final class ConnectionTreePanel extends JPanel {
       if (node.getUserObject() instanceof ConnectionFolder)
         paths.add(new TreePath(node.getPath()));
     }
-    paths.sort(Comparator.comparingInt(TreePath::getPathCount).reversed());
+    paths.sort(Comparator.comparingInt((TreePath path) -> path.getPathCount()).reversed());
     paths.forEach(tree::collapsePath);
     expandedFolderIds.clear();
   }
@@ -211,7 +211,7 @@ public final class ConnectionTreePanel extends JPanel {
   }
 
   public void setIdentities(List<VaultEntry> entries) {
-    identities = entries.stream().collect(java.util.stream.Collectors.toMap(VaultEntry::id, entry -> entry));
+    identities = entries.stream().collect(java.util.stream.Collectors.toMap(entry -> entry.id(), entry -> entry));
     tree.repaint();
     if (selectedValue() instanceof Connection connection)
       details.showConnection(connection, issue(connection));
@@ -281,7 +281,7 @@ public final class ConnectionTreePanel extends JPanel {
     if (loaded) selectedId = selectedId();
     this.folders = folders;
     this.connections = connections;
-    expandedFolderIds.retainAll(folders.stream().map(ConnectionFolder::id).collect(Collectors.toSet()));
+    expandedFolderIds.retainAll(folders.stream().map(folder -> folder.id()).collect(Collectors.toSet()));
     emptyHint.setVisible(connections.isEmpty());
     restoringTree = true;
     try {
@@ -292,7 +292,7 @@ public final class ConnectionTreePanel extends JPanel {
   }
 
   public String expandedIds() {
-    return expandedFolderIds.stream().map(UUID::toString).sorted().collect(Collectors.joining(","));
+    return expandedFolderIds.stream().map(id -> id.toString()).sorted().collect(Collectors.joining(","));
   }
 
   public String selectedId() {
@@ -365,14 +365,14 @@ public final class ConnectionTreePanel extends JPanel {
     }
     folderPaths.entrySet().stream()
         .filter(entry -> expandedFolderIds.contains(entry.getKey()))
-        .map(Map.Entry::getValue)
-        .sorted(Comparator.comparingInt(TreePath::getPathCount))
+        .map(entry -> entry.getValue())
+        .sorted(Comparator.comparingInt((TreePath path) -> path.getPathCount()))
         .forEach(tree::expandPath);
     // Expanding a hidden child also opens its parent; close unsaved parents afterward.
     folderPaths.entrySet().stream()
         .filter(entry -> !expandedFolderIds.contains(entry.getKey()))
-        .map(Map.Entry::getValue)
-        .sorted(Comparator.comparingInt(TreePath::getPathCount).reversed())
+        .map(entry -> entry.getValue())
+        .sorted(Comparator.comparingInt((TreePath path) -> path.getPathCount()).reversed())
         .filter(tree::isExpanded)
         .forEach(tree::collapsePath);
     TreePath selectedPath = selectionPaths.get(selectedId);

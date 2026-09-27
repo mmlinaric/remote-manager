@@ -136,7 +136,7 @@ public final class KdbxVault implements Vault {
   public synchronized Optional<char[]> getPassword(UUID id) throws VaultException {
     return find(id).map(entry -> entry.getPropertyValue("Password"))
         .filter(value -> value != null)
-        .map(PropertyValue::getValueAsChars)
+        .map(value -> value.getValueAsChars())
         .filter(value -> value.length != 0);
   }
 

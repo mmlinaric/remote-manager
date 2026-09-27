@@ -6,7 +6,6 @@ import com.mmlinaric.remotemanager.model.ConnectionFolder;
 import com.mmlinaric.remotemanager.persistence.FolderExpansionPreferences;
 import com.mmlinaric.remotemanager.persistence.SettingsRepository;
 import com.mmlinaric.remotemanager.ui.DialogEscape;
-import com.mmlinaric.remotemanager.ui.SelectionColors;
 import com.mmlinaric.remotemanager.ui.SilkIcons;
 import com.mmlinaric.remotemanager.ui.connections.ConnectionEditor;
 import com.mmlinaric.remotemanager.ui.connections.ConnectionTreePanel;
@@ -851,8 +850,8 @@ public final class MainWindow extends JFrame {
       }
       selected.putConnection(host);
     }, host.id()).whenComplete((ignored, error) -> {
-      drafts.values().forEach(IdentityEditor.Change::clear);
-      hostPasswords.values().forEach(ConnectionEditor.HostPassword::clear);
+      drafts.values().forEach(change -> change.clear());
+      hostPasswords.values().forEach(change -> change.clear());
     });
   }
 
