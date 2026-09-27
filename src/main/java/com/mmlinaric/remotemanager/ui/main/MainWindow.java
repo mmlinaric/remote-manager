@@ -510,10 +510,6 @@ public final class MainWindow extends JFrame {
         workspaceEditor.newFolder(parent);
     }
 
-    private void createFolder(ConnectionFolder parent, String name) {
-        workspaceEditor.createFolder(parent, name);
-    }
-
     private void renameFolder(ConnectionFolder folder) {
         workspaceEditor.renameFolder(folder);
     }

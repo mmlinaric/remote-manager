@@ -59,17 +59,14 @@ class FolderExpansionWindowTest {
             waitForFolders(panel, 3);
             SwingUtilities.invokeAndWait(() -> assertFalse(tree(panel).isExpanded(pathFor(tree(panel), outer.id()))));
 
-            Method createFolder =
-                    MainWindow.class.getDeclaredMethod("createFolder", ConnectionFolder.class, String.class);
-            createFolder.setAccessible(true);
             SwingUtilities.invokeAndWait(() -> {
                 try {
-                    createFolder.invoke(window, parent, "New child");
+                    createFolder(window, parent, "New child");
                     assertFalse(tree(panel).isEnabled());
                     assertFalse(identities(window).isEnabled());
                     assertFalse(window.getJMenuBar().getMenu(0).getItem(1).isEnabled());
                     assertEquals("Saving vault...", status(window).getText());
-                    createFolder.invoke(window, parent, "Duplicate child");
+                    createFolder(window, parent, "Duplicate child");
                 } catch (Exception error) {
                     throw new RuntimeException(error);
                 }
@@ -153,14 +150,11 @@ class FolderExpansionWindowTest {
         MainWindow window = openWindow(new SettingsRepository(temp.resolve("settings.properties")), vault);
         try {
             ConnectionTreePanel panel = treePanel(window);
-            Method createFolder =
-                    MainWindow.class.getDeclaredMethod("createFolder", ConnectionFolder.class, String.class);
-            createFolder.setAccessible(true);
             Method lockVault = MainWindow.class.getDeclaredMethod("lockVault");
             lockVault.setAccessible(true);
             SwingUtilities.invokeAndWait(() -> {
                 try {
-                    createFolder.invoke(window, null, "Child");
+                    createFolder(window, null, "Child");
                     assertEquals("Saving vault...", status(window).getText());
                     lockVault.invoke(window);
                 } catch (Exception error) {
@@ -266,6 +260,20 @@ class FolderExpansionWindowTest {
             Field field = MainWindow.class.getDeclaredField("savingVault");
             field.setAccessible(true);
             return field.getBoolean(window);
+        } catch (Exception error) {
+            throw new RuntimeException(error);
+        }
+    }
+
+    private static void createFolder(MainWindow window, ConnectionFolder parent, String name) {
+        try {
+            Field editorField = MainWindow.class.getDeclaredField("workspaceEditor");
+            editorField.setAccessible(true);
+            Object editor = editorField.get(window);
+            Method createFolder =
+                    editor.getClass().getDeclaredMethod("createFolder", ConnectionFolder.class, String.class);
+            createFolder.setAccessible(true);
+            createFolder.invoke(editor, parent, name);
         } catch (Exception error) {
             throw new RuntimeException(error);
         }

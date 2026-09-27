@@ -48,7 +48,8 @@ final class ConnectionTreeState {
     }
 
     void retainFolders(List<ConnectionFolder> folders) {
-        expandedFolderIds.retainAll(folders.stream().map(ConnectionFolder::id).collect(Collectors.toSet()));
+        expandedFolderIds.retainAll(
+                folders.stream().map((ConnectionFolder folder) -> folder.id()).collect(Collectors.toSet()));
     }
 
     void restore(JTree tree) {
@@ -69,14 +70,14 @@ final class ConnectionTreeState {
         }
         folderPaths.entrySet().stream()
                 .filter(entry -> expandedFolderIds.contains(entry.getKey()))
-                .map(Map.Entry::getValue)
-                .sorted(java.util.Comparator.comparingInt(TreePath::getPathCount))
+                .map((Map.Entry<UUID, TreePath> entry) -> entry.getValue())
+                .sorted(java.util.Comparator.comparingInt((TreePath path) -> path.getPathCount()))
                 .forEach(tree::expandPath);
         // Expanding a hidden child also opens its parent; close unsaved parents afterward.
         folderPaths.entrySet().stream()
                 .filter(entry -> !expandedFolderIds.contains(entry.getKey()))
-                .map(Map.Entry::getValue)
-                .sorted(java.util.Comparator.comparingInt(TreePath::getPathCount)
+                .map((Map.Entry<UUID, TreePath> entry) -> entry.getValue())
+                .sorted(java.util.Comparator.comparingInt((TreePath path) -> path.getPathCount())
                         .reversed())
                 .filter(tree::isExpanded)
                 .forEach(tree::collapsePath);
@@ -126,7 +127,10 @@ final class ConnectionTreeState {
     }
 
     String expandedIds() {
-        return expandedFolderIds.stream().map(UUID::toString).sorted().collect(Collectors.joining(","));
+        return expandedFolderIds.stream()
+                .map((UUID id) -> id.toString())
+                .sorted()
+                .collect(Collectors.joining(","));
     }
 
     String selectedId(JTree tree) {

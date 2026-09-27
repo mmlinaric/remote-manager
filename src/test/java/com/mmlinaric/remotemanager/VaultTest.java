@@ -326,7 +326,7 @@ class VaultTest {
             assertEquals(
                     List.of("Production"),
                     workspace.snapshot().folders().stream()
-                            .map(ConnectionFolder::name)
+                            .map((ConnectionFolder folder) -> folder.name())
                             .toList());
         }
     }

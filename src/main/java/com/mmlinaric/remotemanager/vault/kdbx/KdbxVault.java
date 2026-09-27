@@ -1,7 +1,5 @@
 package com.mmlinaric.remotemanager.vault.kdbx;
 
-import static com.mmlinaric.remotemanager.vault.kdbx.KdbxSchema.*;
-
 import com.mmlinaric.remotemanager.model.Connection;
 import com.mmlinaric.remotemanager.model.ConnectionFolder;
 import com.mmlinaric.remotemanager.vault.HostSecretDraft;
@@ -226,11 +224,6 @@ public final class KdbxVault implements WorkspaceVault {
         connectionStore().delete(id);
     }
 
-    private KdbxManagedGroups groups() throws VaultException {
-        requireUnlocked();
-        return new KdbxManagedGroups(database);
-    }
-
     public synchronized void save() throws VaultException {
         if (sessionPassword == null) throw new VaultException("Vault is locked");
         save(sessionPassword);
@@ -287,11 +280,6 @@ public final class KdbxVault implements WorkspaceVault {
                 new KdbxVaultPersistence(path).save(database, masterPassword, loadedDigest);
         database = saved.database();
         loadedDigest = saved.digest();
-    }
-
-    private KdbxEntries entryStore() throws VaultException {
-        requireUnlocked();
-        return new KdbxEntries(database);
     }
 
     private KdbxEntryReader entryReader() throws VaultException {

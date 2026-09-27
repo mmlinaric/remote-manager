@@ -72,8 +72,8 @@ public final class HostSubmissionPersistence implements AutoCloseable {
 
     @Override
     public void close() {
-        identities.values().forEach(IdentityEditor.Change::clear);
-        hostPasswords.values().forEach(ConnectionEditor.HostPassword::clear);
+        identities.values().forEach((IdentityEditor.Change change) -> change.clear());
+        hostPasswords.values().forEach((ConnectionEditor.HostPassword password) -> password.clear());
     }
 
     private void saveIdentity(WorkspaceVault vault, UUID id, IdentityEditor.Change change) throws Exception {
