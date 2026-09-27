@@ -19,12 +19,10 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import org.linguafranca.pwdb.PropertyValue;
 import org.linguafranca.pwdb.kdbx.jackson.JacksonDatabase;
 import org.linguafranca.pwdb.kdbx.jackson.JacksonEntry;
 import org.linguafranca.pwdb.kdbx.jackson.JacksonGroup;
@@ -96,19 +94,21 @@ public final class KdbxVault implements WorkspaceVault {
 
     @Override
     public synchronized List<VaultEntry> entries() throws VaultException {
-        requireUnlocked();
-        return allEntries().stream()
-                .filter(entry -> !isRole(entry, HOST) && !isRole(entry, HOST_SECRET) && !isRole(entry, MARKER))
-                .map(this::summary)
+        KdbxEntries entryStore = entryStore();
+        return entryStore.all().stream()
+                .filter(entry -> !KdbxEntries.hasRole(entry, HOST)
+                        && !KdbxEntries.hasRole(entry, HOST_SECRET)
+                        && !KdbxEntries.hasRole(entry, MARKER))
+                .map(entryStore::summary)
                 .sorted((a, b) -> a.toString().compareToIgnoreCase(b.toString()))
                 .toList();
     }
 
     public synchronized List<VaultEntry> credentialEntries() throws VaultException {
-        requireUnlocked();
-        return allEntries().stream()
-                .filter(entry -> !isRole(entry, HOST) && !isRole(entry, MARKER))
-                .map(this::summary)
+        KdbxEntries entryStore = entryStore();
+        return entryStore.all().stream()
+                .filter(entry -> !KdbxEntries.hasRole(entry, HOST) && !KdbxEntries.hasRole(entry, MARKER))
+                .map(entryStore::summary)
                 .toList();
     }
 
@@ -121,12 +121,15 @@ public final class KdbxVault implements WorkspaceVault {
 
     @Override
     public synchronized Optional<VaultEntry> getEntry(UUID id) throws VaultException {
-        return find(id).map(this::summary);
+        KdbxEntries entryStore = entryStore();
+        return entryStore.find(id).map(entryStore::summary);
     }
 
     @Override
     public synchronized Optional<char[]> getPassword(UUID id) throws VaultException {
-        return find(id).map(entry -> entry.getPropertyValue("Password"))
+        return entryStore()
+                .find(id)
+                .map(entry -> entry.getPropertyValue("Password"))
                 .filter(value -> value != null)
                 .map(value -> value.getValueAsChars())
                 .filter(value -> value.length != 0);
@@ -134,7 +137,7 @@ public final class KdbxVault implements WorkspaceVault {
 
     @Override
     public synchronized Optional<byte[]> getAttachment(UUID id, String attachmentName) throws VaultException {
-        JacksonEntry entry = find(id).orElseThrow(() -> new VaultException("KeePass entry is missing"));
+        JacksonEntry entry = entryStore().find(id).orElseThrow(() -> new VaultException("KeePass entry is missing"));
         try {
             return Optional.ofNullable(entry.getBinaryProperty(attachmentName));
         } catch (Exception error) {
@@ -188,19 +191,20 @@ public final class KdbxVault implements WorkspaceVault {
             byte[] attachment)
             throws VaultException {
         requireUnlocked();
-        if (find(id).isPresent()) throw new VaultException("Identity ID already exists");
-        rejectReservedFields(fields);
+        if (entryStore().find(id).isPresent()) throw new VaultException("Identity ID already exists");
+        KdbxEntries.rejectReservedFields(fields);
         JacksonEntry entry = database.newEntry();
         entry.setProperty(ID, id.toString());
-        updateValues(entry, title, username, password, fields, attachmentName, attachment);
+        entryStore().update(entry, title, username, password, fields, attachmentName, attachment);
         groups().getOrCreateRoot(IDENTITY_ROOT, "Remote Manager Identities").addEntry(entry);
         return id;
     }
 
     public synchronized void deleteIdentity(UUID id) throws VaultException {
-        JacksonEntry entry = find(id).orElseThrow(() -> new VaultException("Identity is missing"));
-        if (isRole(entry, HOST) || isRole(entry, HOST_SECRET) || isRole(entry, MARKER))
-            throw new VaultException("Identity is missing");
+        JacksonEntry entry = entryStore().find(id).orElseThrow(() -> new VaultException("Identity is missing"));
+        if (KdbxEntries.hasRole(entry, HOST)
+                || KdbxEntries.hasRole(entry, HOST_SECRET)
+                || KdbxEntries.hasRole(entry, MARKER)) throw new VaultException("Identity is missing");
         for (Connection connection : connections()) {
             if (id.equals(connection.sshCredentialEntryId()) || id.equals(connection.sudoCredentialEntryId()))
                 throw new VaultException("Identity is used by host: " + connection.name());
@@ -224,7 +228,7 @@ public final class KdbxVault implements WorkspaceVault {
         requireUnlocked();
         if (!"ssh".equals(purpose) && !"sudo".equals(purpose))
             throw new VaultException("Invalid host password purpose");
-        JacksonEntry entry = find(id).orElse(null);
+        JacksonEntry entry = entryStore().find(id).orElse(null);
         if (entry == null) {
             if (password == null || password.length == 0) throw new VaultException("Enter a password for this host");
             entry = database.newEntry();
@@ -232,23 +236,23 @@ public final class KdbxVault implements WorkspaceVault {
             entry.setProperty(ROLE, HOST_SECRET);
             entry.setProperty(SECRET_OWNER, ownerHostId.toString());
             entry.setProperty(SECRET_PURPOSE, purpose);
-            updateValues(entry, title, username, password, null, null, null);
+            entryStore().update(entry, title, username, password, null, null, null);
             groups().getOrCreateRoot(HOST_SECRET_ROOT, "Remote Manager Host Passwords")
                     .addEntry(entry);
         } else {
-            if (!isRole(entry, HOST_SECRET)
+            if (!KdbxEntries.hasRole(entry, HOST_SECRET)
                     || !ownerHostId.toString().equals(entry.getProperty(SECRET_OWNER))
                     || !purpose.equals(entry.getProperty(SECRET_PURPOSE)))
                 throw new VaultException("Host password belongs to a different host");
-            updateValues(entry, title, username, password, null, null, null);
+            entryStore().update(entry, title, username, password, null, null, null);
         }
     }
 
     private void pruneHostSecrets(UUID ownerHostId, Connection connection) throws VaultException {
-        for (JacksonEntry entry : allEntries()) {
-            if (!isRole(entry, HOST_SECRET) || !ownerHostId.toString().equals(entry.getProperty(SECRET_OWNER)))
-                continue;
-            UUID id = logicalId(entry);
+        for (JacksonEntry entry : entryStore().all()) {
+            if (!KdbxEntries.hasRole(entry, HOST_SECRET)
+                    || !ownerHostId.toString().equals(entry.getProperty(SECRET_OWNER))) continue;
+            UUID id = KdbxEntries.logicalId(entry);
             if (connection == null
                     || (!id.equals(connection.sshCredentialEntryId())
                             && !id.equals(connection.sudoCredentialEntryId())))
@@ -282,9 +286,9 @@ public final class KdbxVault implements WorkspaceVault {
 
     private void collectConnections(JacksonGroup group, UUID parentId, List<Connection> result) throws VaultException {
         for (JacksonEntry entry : group.getEntries()) {
-            if (!isRole(entry, HOST)) continue;
+            if (!KdbxEntries.hasRole(entry, HOST)) continue;
             try {
-                result.add(KdbxConnectionMapper.read(entry, parentId, logicalId(entry)));
+                result.add(KdbxConnectionMapper.read(entry, parentId, KdbxEntries.logicalId(entry)));
             } catch (RuntimeException error) {
                 throw new VaultException("Invalid saved host: " + entry.getTitle(), error);
             }
@@ -328,8 +332,9 @@ public final class KdbxVault implements WorkspaceVault {
         JacksonGroup parent =
                 connection.parentFolderId() == null ? root : groups().findGroup(root, connection.parentFolderId());
         if (parent == null) throw new VaultException("Parent folder is missing");
-        JacksonEntry entry = find(connection.id()).orElse(null);
-        if (entry != null && !isRole(entry, HOST)) throw new VaultException("Host ID conflicts with an identity");
+        JacksonEntry entry = entryStore().find(connection.id()).orElse(null);
+        if (entry != null && !KdbxEntries.hasRole(entry, HOST))
+            throw new VaultException("Host ID conflicts with an identity");
         if (entry == null) {
             entry = database.newEntry();
             entry.setProperty(ID, connection.id().toString());
@@ -342,8 +347,8 @@ public final class KdbxVault implements WorkspaceVault {
     }
 
     public synchronized void deleteConnection(UUID id) throws VaultException {
-        JacksonEntry entry = find(id).orElse(null);
-        if (entry == null || !isRole(entry, HOST)) throw new VaultException("Host is missing");
+        JacksonEntry entry = entryStore().find(id).orElse(null);
+        if (entry == null || !KdbxEntries.hasRole(entry, HOST)) throw new VaultException("Host is missing");
         entry.getParent().removeEntry(entry);
         pruneHostSecrets(id, null);
     }
@@ -379,11 +384,12 @@ public final class KdbxVault implements WorkspaceVault {
             String attachmentName,
             byte[] attachment)
             throws VaultException {
-        JacksonEntry entry = find(id).orElseThrow(() -> new VaultException("KeePass entry is missing"));
-        if (isRole(entry, HOST) || isRole(entry, HOST_SECRET) || isRole(entry, MARKER))
-            throw new VaultException("Identity is missing");
-        rejectReservedFields(fields);
-        updateValues(entry, title, username, password, fields, attachmentName, attachment);
+        JacksonEntry entry = entryStore().find(id).orElseThrow(() -> new VaultException("KeePass entry is missing"));
+        if (KdbxEntries.hasRole(entry, HOST)
+                || KdbxEntries.hasRole(entry, HOST_SECRET)
+                || KdbxEntries.hasRole(entry, MARKER)) throw new VaultException("Identity is missing");
+        KdbxEntries.rejectReservedFields(fields);
+        entryStore().update(entry, title, username, password, fields, attachmentName, attachment);
     }
 
     @Override
@@ -403,46 +409,6 @@ public final class KdbxVault implements WorkspaceVault {
         } finally {
             if (password != null) Arrays.fill(password, '\0');
             if (bytes != null) Arrays.fill(bytes, (byte) 0);
-        }
-    }
-
-    private static void rejectReservedFields(Map<String, String> fields) throws VaultException {
-        if (fields == null) return;
-        for (String key : fields.keySet()) {
-            if (key == null
-                    || key.equals("Title")
-                    || key.equals("UserName")
-                    || key.equals("Password")
-                    || key.equals("URL")
-                    || key.equals("Notes")
-                    || key.startsWith(PREFIX))
-                throw new VaultException("Reserved KeePass field cannot be custom: " + key);
-        }
-    }
-
-    private void updateValues(
-            JacksonEntry entry,
-            String title,
-            String username,
-            char[] password,
-            Map<String, String> fields,
-            String attachmentName,
-            byte[] attachment)
-            throws VaultException {
-        if (title == null || title.isBlank()) throw new VaultException("Entry title is required");
-        entry.setTitle(title);
-        entry.setUsername(username == null ? "" : username);
-        if (password != null)
-            entry.setPropertyValue(
-                    "Password",
-                    database.getPropertyValueStrategy().newProtected().of(password));
-        if (fields != null) fields.forEach(entry::setProperty);
-        if (attachmentName != null && attachment != null) {
-            try {
-                entry.setBinaryProperty(attachmentName, attachment);
-            } catch (Exception error) {
-                throw new VaultException("Could not store attachment", error);
-            }
         }
     }
 
@@ -474,49 +440,9 @@ public final class KdbxVault implements WorkspaceVault {
         }
     }
 
-    private Optional<JacksonEntry> find(UUID id) throws VaultException {
+    private KdbxEntries entryStore() throws VaultException {
         requireUnlocked();
-        JacksonEntry result = null;
-        for (JacksonEntry entry : allEntries()) {
-            if (!id.equals(logicalId(entry))) continue;
-            if (result != null) throw new VaultException("Duplicate KeePass entry ID: " + id);
-            result = entry;
-        }
-        return Optional.ofNullable(result);
-    }
-
-    private static UUID logicalId(JacksonEntry entry) {
-        String value = entry.getProperty(ID);
-        return value == null || value.isBlank() ? entry.getUuid() : UUID.fromString(value);
-    }
-
-    private List<JacksonEntry> allEntries() {
-        List<JacksonEntry> result = new ArrayList<>();
-        collectEntries(database.getRootGroup(), result);
-        return result;
-    }
-
-    private static void collectEntries(JacksonGroup group, List<JacksonEntry> result) {
-        result.addAll(group.getEntries());
-        for (JacksonGroup child : group.getGroups()) collectEntries(child, result);
-    }
-
-    private VaultEntry summary(JacksonEntry entry) {
-        Map<String, String> fields = new HashMap<>();
-        for (String name : entry.getPropertyNames()) {
-            if (!"Password".equals(name)) fields.put(name, string(entry.getProperty(name)));
-        }
-        PropertyValue password = entry.getPropertyValue("Password");
-        char[] chars = password == null ? null : password.getValueAsChars();
-        boolean hasPassword = chars != null && chars.length != 0;
-        if (chars != null) Arrays.fill(chars, '\0');
-        return new VaultEntry(
-                logicalId(entry),
-                entry.getTitle(),
-                entry.getUsername(),
-                Map.copyOf(fields),
-                entry.getBinaryPropertyNames(),
-                hasPassword);
+        return new KdbxEntries(database);
     }
 
     private void requireUnlocked() throws VaultException {
@@ -534,13 +460,5 @@ public final class KdbxVault implements WorkspaceVault {
         } catch (Exception error) {
             throw new VaultException("The vault master password is incorrect", error);
         }
-    }
-
-    private static boolean isRole(JacksonEntry entry, String role) {
-        return role.equals(entry.getProperty(ROLE));
-    }
-
-    private static String string(Object value) {
-        return value == null ? "" : value.toString();
     }
 }
