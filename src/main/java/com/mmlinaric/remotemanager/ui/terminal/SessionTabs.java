@@ -2,7 +2,6 @@ package com.mmlinaric.remotemanager.ui.terminal;
 
 import com.mmlinaric.remotemanager.model.AuthenticationType;
 import com.mmlinaric.remotemanager.model.Connection;
-import com.mmlinaric.remotemanager.ssh.KnownHostsVerifier;
 import com.mmlinaric.remotemanager.ssh.SshRemoteSession;
 import com.mmlinaric.remotemanager.ui.SilkIcons;
 import com.mmlinaric.remotemanager.ui.settings.AppSettings;
@@ -25,7 +24,6 @@ import java.util.function.Supplier;
 import javax.swing.Icon;
 import javax.swing.JComponent;
 import javax.swing.JOptionPane;
-import javax.swing.JPasswordField;
 import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
 
@@ -41,6 +39,7 @@ public final class SessionTabs extends JTabbedPane {
     private final Supplier<AppSettings> settings;
     private final Function<UUID, Connection> currentConnection;
     private final SecureClipboard clipboard;
+    private final SessionSecurityPrompts securityPrompts = new SessionSecurityPrompts(this);
     private final java.util.concurrent.ExecutorService worker = Executors.newCachedThreadPool();
     private final java.util.concurrent.ScheduledExecutorService scheduler =
             Executors.newSingleThreadScheduledExecutor();
@@ -197,8 +196,8 @@ public final class SessionTabs extends JTabbedPane {
                 connection,
                 vaultSupplier.get(),
                 preferences.knownHosts(),
-                hostPrompt(),
-                this::askKeyPassphrase,
+                securityPrompts.hostPrompt(),
+                securityPrompts::askKeyPassphrase,
                 preferences.terminalFont(),
                 preferences.terminalFontSize(),
                 preferences.scrollbackLines());
@@ -234,79 +233,6 @@ public final class SessionTabs extends JTabbedPane {
                 });
             }
         });
-    }
-
-    private KnownHostsVerifier.Prompt hostPrompt() {
-        return new KnownHostsVerifier.Prompt() {
-            @Override
-            public boolean trustUnknown(String host, String address, String algorithm, String fingerprint) {
-                return onEdt(() -> JOptionPane.showConfirmDialog(
-                                SessionTabs.this,
-                                "Unknown SSH host: "
-                                        + host
-                                        + "\nIP: "
-                                        + address
-                                        + "\nAlgorithm: "
-                                        + algorithm
-                                        + "\nFingerprint: "
-                                        + fingerprint,
-                                "Trust and connect",
-                                JOptionPane.OK_CANCEL_OPTION,
-                                JOptionPane.WARNING_MESSAGE)
-                        == JOptionPane.OK_OPTION);
-            }
-
-            @Override
-            public void warnChanged(String host, String oldFingerprint, String newFingerprint) {
-                onEdt(() -> {
-                    JOptionPane.showMessageDialog(
-                            SessionTabs.this,
-                            "SSH host key changed for "
-                                    + host
-                                    + "\nKnown: "
-                                    + oldFingerprint
-                                    + "\nPresented: "
-                                    + newFingerprint,
-                            "Host key mismatch",
-                            JOptionPane.ERROR_MESSAGE);
-                    return null;
-                });
-            }
-        };
-    }
-
-    private char[] askKeyPassphrase(String keyName) {
-        return onEdt(() -> {
-            JPasswordField field = new JPasswordField(24);
-            int answer = JOptionPane.showConfirmDialog(
-                    this,
-                    field,
-                    "Passphrase for " + keyName,
-                    JOptionPane.OK_CANCEL_OPTION,
-                    JOptionPane.QUESTION_MESSAGE);
-            char[] password = answer == JOptionPane.OK_OPTION ? field.getPassword() : null;
-            field.setText("");
-            return password;
-        });
-    }
-
-    private <T> T onEdt(java.util.concurrent.Callable<T> action) {
-        try {
-            if (SwingUtilities.isEventDispatchThread()) {
-                return action.call();
-            }
-            java.util.concurrent.atomic.AtomicReference<T> value = new java.util.concurrent.atomic.AtomicReference<>();
-            SwingUtilities.invokeAndWait(() -> {
-                try {
-                    value.set(action.call());
-                } catch (Exception error) {
-                    throw new RuntimeException(error);
-                }
-            });
-            return value.get();
-        } catch (Exception error) {
-            throw new IllegalStateException("Could not show SSH dialog", error);
-        }
     }
 
     private OpenTab selectedTab() {
