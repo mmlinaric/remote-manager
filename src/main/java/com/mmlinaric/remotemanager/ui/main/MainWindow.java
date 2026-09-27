@@ -11,12 +11,12 @@ import com.mmlinaric.remotemanager.ui.settings.SettingsDialog;
 import com.mmlinaric.remotemanager.ui.terminal.SessionTabs;
 import com.mmlinaric.remotemanager.ui.vault.IdentityEditor;
 import com.mmlinaric.remotemanager.update.UpdateController;
-import com.mmlinaric.remotemanager.vault.HostSecretDraft;
 import com.mmlinaric.remotemanager.vault.IdentityDraft;
 import com.mmlinaric.remotemanager.vault.VaultAttachment;
 import com.mmlinaric.remotemanager.vault.VaultEntry;
 import com.mmlinaric.remotemanager.vault.WorkspaceVault;
 import com.mmlinaric.remotemanager.vault.kdbx.KdbxVault;
+import com.mmlinaric.remotemanager.workspace.HostSubmissionPersistence;
 import com.mmlinaric.remotemanager.workspace.VaultWorkspace;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
@@ -36,7 +36,6 @@ import java.beans.PropertyChangeListener;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -519,72 +518,9 @@ public final class MainWindow extends JFrame {
     }
 
     private CompletableFuture<Void> saveHost(ConnectionEditor.Submission submission) {
-        Connection host = submission.connection();
-        Map<UUID, IdentityEditor.Change> drafts = new LinkedHashMap<>();
-        submission
-                .newIdentities()
-                .forEach((id, change) -> drafts.put(
-                        id,
-                        new IdentityEditor.Change(
-                                change.title(),
-                                change.username(),
-                                change.password() == null
-                                        ? null
-                                        : change.password().clone(),
-                                change.attachmentPath())));
-        Map<UUID, ConnectionEditor.HostPassword> hostPasswords = new LinkedHashMap<>();
-        submission
-                .hostPasswords()
-                .forEach((id, change) -> hostPasswords.put(
-                        id,
-                        new ConnectionEditor.HostPassword(
-                                change.purpose(),
-                                change.password() == null
-                                        ? null
-                                        : change.password().clone())));
-        return mutate(
-                        selected -> {
-                            for (Map.Entry<UUID, IdentityEditor.Change> item : drafts.entrySet()) {
-                                IdentityEditor.Change draft = item.getValue();
-                                byte[] attachment = draft.attachmentPath() == null
-                                        ? null
-                                        : Files.readAllBytes(draft.attachmentPath());
-                                IdentityDraft identity = new IdentityDraft(
-                                        draft.title(),
-                                        draft.username(),
-                                        draft.password(),
-                                        Map.of(),
-                                        new VaultAttachment(draft.attachmentName(), attachment));
-                                try {
-                                    selected.addIdentity(item.getKey(), identity);
-                                } finally {
-                                    identity.clearSecrets();
-                                    if (attachment != null) Arrays.fill(attachment, (byte) 0);
-                                }
-                            }
-                            for (Map.Entry<UUID, ConnectionEditor.HostPassword> item : hostPasswords.entrySet()) {
-                                ConnectionEditor.HostPassword change = item.getValue();
-                                HostSecretDraft secret = new HostSecretDraft(
-                                        item.getKey(),
-                                        host.id(),
-                                        change.purpose(),
-                                        host.name()
-                                                + ("ssh".equals(change.purpose()) ? " SSH password" : " sudo password"),
-                                        host.username(),
-                                        change.password());
-                                try {
-                                    selected.putHostSecret(secret);
-                                } finally {
-                                    secret.clearSecrets();
-                                }
-                            }
-                            selected.putConnection(host);
-                        },
-                        host.id())
-                .whenComplete((ignored, error) -> {
-                    drafts.values().forEach(change -> change.clear());
-                    hostPasswords.values().forEach(change -> change.clear());
-                });
+        HostSubmissionPersistence persistence = HostSubmissionPersistence.prepare(submission);
+        return mutate(persistence::saveTo, persistence.connection().id())
+                .whenComplete((ignored, error) -> persistence.close());
     }
 
     private void editSelectedHost() {
