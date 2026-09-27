@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Verify tag matches Maven version
+        shell: bash
+        run: |
+          version=$(./mvnw help:evaluate -Dexpression=project.version -q -DforceStdout)
+          test "v$version" = "$GITHUB_REF_NAME"
+      - name: Install RPM packaging tools
+        run: sudo apt-get update && sudo apt-get install --yes rpm
+      - name: Build Linux packages
+        run: ./scripts/package-linux.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64
+          path: |
+            target/dist/*.rpm
+            target/dist/*.tar.gz
+            target/dist/SHA256SUMS-linux-x64.txt
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Verify tag matches Maven version
+        shell: pwsh
+        run: |
+          $version = (& .\mvnw.cmd help:evaluate -Dexpression=project.version -q -DforceStdout).Trim()
+          if ("v$version" -ne $env:GITHUB_REF_NAME) { throw "Tag does not match Maven version $version" }
+      - name: Install WiX Toolset
+        shell: pwsh
+        run: choco install wixtoolset --no-progress --yes
+      - name: Build Windows packages
+        shell: pwsh
+        run: .\scripts\package-windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: |
+            target/dist/*.exe
+            target/dist/*.zip
+            target/dist/SHA256SUMS-windows-x64.txt
+          if-no-files-found: error
+
+  publish:
+    needs: [linux, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" artifacts/**/* --verify-tag --generate-notes --title "Remote Manager ${GITHUB_REF_NAME#v}"

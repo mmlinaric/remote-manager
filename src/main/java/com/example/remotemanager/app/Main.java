@@ -48,6 +48,7 @@ public final class Main {
     MainWindow window = new MainWindow(settings);
     configureWindow(window);
     window.setVisible(true);
+    window.checkForUpdatesAutomatically();
   }
 
   private static void configureWindow(MainWindow window) {

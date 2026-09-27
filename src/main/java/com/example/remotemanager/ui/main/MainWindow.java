@@ -1,5 +1,6 @@
 package com.example.remotemanager.ui.main;
 
+import com.example.remotemanager.app.AppVersion;
 import com.example.remotemanager.model.Connection;
 import com.example.remotemanager.model.ConnectionFolder;
 import com.example.remotemanager.persistence.FolderExpansionPreferences;
@@ -13,6 +14,7 @@ import com.example.remotemanager.ui.settings.AppSettings;
 import com.example.remotemanager.ui.settings.SettingsDialog;
 import com.example.remotemanager.ui.terminal.SessionTabs;
 import com.example.remotemanager.ui.vault.IdentityEditor;
+import com.example.remotemanager.update.UpdateController;
 import com.example.remotemanager.vault.VaultEntry;
 import com.example.remotemanager.vault.kdbx.KdbxVault;
 import java.awt.AWTEvent;
@@ -87,6 +89,7 @@ import javax.swing.event.MenuListener;
 /** Vault-first desktop workspace. All host and identity data comes from the unlocked KDBX file. */
 public final class MainWindow extends JFrame {
   private final SettingsRepository settings;
+  private final UpdateController updates;
   private final FolderExpansionPreferences folderExpansion;
   private final ExecutorService vaultWorker = Executors.newSingleThreadExecutor();
   private final JPanel cards = new JPanel(new CardLayout());
@@ -139,6 +142,7 @@ public final class MainWindow extends JFrame {
   public MainWindow(SettingsRepository settings) {
     super("Remote Manager");
     this.settings = settings;
+    this.updates = new UpdateController(this, settings);
     this.folderExpansion = new FolderExpansionPreferences(settings);
     this.preferences = AppSettings.load(settings);
     int savedSidebarWidth = number("window.divider", 320);
@@ -173,7 +177,10 @@ public final class MainWindow extends JFrame {
     statusBar.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
     statusBar.add(status, BorderLayout.CENTER);
     statusBar.add(vaultState, BorderLayout.EAST);
-    add(statusBar, BorderLayout.SOUTH);
+    JPanel south = new JPanel(new BorderLayout());
+    south.add(updates.banner(), BorderLayout.NORTH);
+    south.add(statusBar, BorderLayout.SOUTH);
+    add(south, BorderLayout.SOUTH);
     showLocked();
     addWindowListener(new WindowAdapter() {
       @Override public void windowClosing(WindowEvent event) { closeWindow(); }
@@ -344,8 +351,12 @@ public final class MainWindow extends JFrame {
     tools.add(item("Settings", SilkIcons.SETTINGS, this::editSettings));
     bar.add(tools);
     JMenu help = topMenu("Help");
+    help.add(item("Check for updates...", SilkIcons.RECONNECT, updates::checkManually));
+    help.addSeparator();
     help.add(item("About", SilkIcons.ABOUT, () -> JOptionPane.showMessageDialog(this,
-        "Remote Manager\nSSH hosts and identities in a KeePass vault.\nIcons: FamFamFam Silk by Mark James (CC BY 2.5).",
+        "Remote Manager " + AppVersion.display()
+            + "\nSSH hosts and identities in a KeePass vault."
+            + "\nIcons: FamFamFam Silk by Mark James (CC BY 2.5).",
         "About Remote Manager", JOptionPane.INFORMATION_MESSAGE)));
     bar.add(help);
     return bar;
@@ -1057,6 +1068,10 @@ public final class MainWindow extends JFrame {
     dispose();
   }
 
+  public void checkForUpdatesAutomatically() {
+    updates.checkAutomatically();
+  }
+
   @Override public void dispose() {
     operationVersion++;
     autoLock.stop();
@@ -1066,6 +1081,7 @@ public final class MainWindow extends JFrame {
     KeyboardFocusManager.getCurrentKeyboardFocusManager()
         .removePropertyChangeListener("focusOwner", buttonFocus);
     tabs.shutdown();
+    updates.close();
     if (vault != null) vaultWorker.execute(vault::lock);
     vaultWorker.shutdown();
     super.dispose();
@@ -1087,7 +1103,9 @@ public final class MainWindow extends JFrame {
         + (savingVault ? "  |  Saving..." : ""));
   }
   private void showErrorLater(String message, Throwable error) {
-    SwingUtilities.invokeLater(() -> showError(message, error));
+    SwingUtilities.invokeLater(() -> {
+      if (isShowing()) showError(message, error);
+    });
   }
   private void showError(String message, Throwable error) {
     Throwable cause = error;

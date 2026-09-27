@@ -11,7 +11,24 @@ Install Java 25, then run:
 ./mvnw exec:exec
 ```
 
-On Windows, use `mvnw.cmd`. The app uses the system Swing look and feel. Native installers are not included yet.
+On Windows, use `mvnw.cmd`. The app uses the system Swing look and feel.
+
+## Install and update
+
+Published releases are available from the repository's GitHub Releases page:
+
+- Windows x64: a per-user `.exe` installer and a portable `.zip`. The installer bundles Java, adds Start Menu and desktop shortcuts, and supports normal uninstall and in-place upgrades. Early releases are unsigned, so Windows SmartScreen or workplace policy may show a warning.
+- Linux x64: an `.rpm` package for Fedora-compatible systems and a portable `.tar.gz`. Both bundle Java.
+
+Use **Help → Check for updates** to check GitHub for the latest stable release. Packaged builds also check quietly at most once per day and show a dismissible notice when a newer version exists. Updates remain manual: the notice opens the GitHub release page so you can review and install the appropriate package.
+
+## Creating a release
+
+1. Set the non-snapshot version in `pom.xml` and commit it.
+2. Tag that commit with the same version prefixed by `v`, for example `v0.1.0`.
+3. Push the tag. GitHub Actions tests the app, builds all four packages on their native platforms, creates SHA-256 checksum files, and publishes the GitHub release.
+
+The tag and Maven version must match. Local platform packages can be built with `scripts/package-linux.sh` or `scripts/package-windows.ps1`; both require JDK 25 with `jpackage`. The Linux RPM also needs `rpmbuild`, and Windows needs WiX Toolset. If a distribution-modified JDK cannot create a runtime with `jlink`, use an unmodified JDK such as Temurin or set `JPACKAGE_RUNTIME_IMAGE` to an existing Java 25 runtime directory.
 
 ## First steps
 
