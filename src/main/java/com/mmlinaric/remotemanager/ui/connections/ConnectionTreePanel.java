@@ -3,7 +3,6 @@ package com.mmlinaric.remotemanager.ui.connections;
 import com.mmlinaric.remotemanager.model.AuthenticationType;
 import com.mmlinaric.remotemanager.model.Connection;
 import com.mmlinaric.remotemanager.model.ConnectionFolder;
-import com.mmlinaric.remotemanager.ui.SilkIcons;
 import com.mmlinaric.remotemanager.vault.VaultEntry;
 import java.awt.BorderLayout;
 import java.awt.Component;
@@ -20,9 +19,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import javax.swing.Icon;
 import javax.swing.JLabel;
-import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
@@ -31,7 +28,6 @@ import javax.swing.SwingUtilities;
 import javax.swing.event.TreeExpansionEvent;
 import javax.swing.event.TreeExpansionListener;
 import javax.swing.tree.DefaultMutableTreeNode;
-import javax.swing.tree.DefaultTreeCellRenderer;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
 
@@ -53,27 +49,7 @@ public final class ConnectionTreePanel extends JPanel {
         super(new BorderLayout());
         add(new JScrollPane(tree), BorderLayout.CENTER);
         add(emptyHint, BorderLayout.NORTH);
-        tree.setCellRenderer(new DefaultTreeCellRenderer() {
-            @Override
-            public Component getTreeCellRendererComponent(
-                    JTree tree,
-                    Object value,
-                    boolean selected,
-                    boolean expanded,
-                    boolean leaf,
-                    int row,
-                    boolean hasFocus) {
-                super.getTreeCellRendererComponent(tree, value, selected, expanded, leaf, row, false);
-                Object item = value instanceof DefaultMutableTreeNode node ? node.getUserObject() : value;
-                setIcon(
-                        item instanceof Connection connection
-                                ? issue(connection) == null ? SilkIcons.CONNECTION : SilkIcons.FAILED
-                                : item instanceof ConnectionFolder ? SilkIcons.FOLDER : SilkIcons.ROOT);
-                if (item instanceof Connection connection && issue(connection) != null)
-                    setText(connection.name() + ": " + issue(connection));
-                return this;
-            }
-        });
+        tree.setCellRenderer(new ConnectionTreeRenderer(this::issue));
         tree.addTreeSelectionListener(event -> {
             if (selectedValue() instanceof Connection connection) details.showConnection(connection, issue(connection));
             else details.showConnection(null);
@@ -135,42 +111,13 @@ public final class ConnectionTreePanel extends JPanel {
     }
 
     JPopupMenu contextMenuFor(DefaultMutableTreeNode node, Actions actions) {
-        Object value = node.getUserObject();
-        JPopupMenu popup = new JPopupMenu();
-        if (node.isRoot()) {
-            popup.add(item("New folder", SilkIcons.NEW_FOLDER, () -> actions.newFolder(null)));
-            popup.add(item("New connection", SilkIcons.NEW_CONNECTION, () -> actions.newConnection(null)));
-        } else if (value instanceof ConnectionFolder folder) {
-            popup.add(item("New subfolder", SilkIcons.NEW_FOLDER, () -> actions.newFolder(folder)));
-            popup.add(item("New connection", SilkIcons.NEW_CONNECTION, () -> actions.newConnection(folder)));
-            popup.addSeparator();
-            popup.add(item("Rename", SilkIcons.EDIT, () -> actions.rename(folder)));
-            popup.add(item("Delete", SilkIcons.DELETE, () -> actions.deleteFolder(folder)));
-        } else if (value instanceof Connection connection) {
-            popup.add(item("Open", SilkIcons.CONNECT, () -> actions.open(connection)));
-            JMenuItem copySudo =
-                    item("Copy sudo password", SilkIcons.COPY_PASSWORD, () -> actions.copySudoPassword(connection));
-            copySudo.setEnabled(hasSudoPassword(connection));
-            popup.add(copySudo);
-            popup.add(item("Edit", SilkIcons.EDIT, () -> actions.edit(connection)));
-            popup.addSeparator();
-            popup.add(item("Delete", SilkIcons.DELETE, () -> actions.deleteConnection(connection)));
-        } else {
-            return null;
-        }
-        return popup;
+        return ConnectionContextMenu.create(node, actions, this::hasSudoPassword);
     }
 
     private TreePath pathAtRow(int y) {
         TreePath path = tree.getClosestPathForLocation(0, y);
         Rectangle bounds = path == null ? null : tree.getPathBounds(path);
         return bounds != null && y >= bounds.y && y < bounds.y + bounds.height ? path : null;
-    }
-
-    private static JMenuItem item(String title, Icon icon, Runnable action) {
-        JMenuItem item = new JMenuItem(title, icon);
-        item.addActionListener(event -> action.run());
-        return item;
     }
 
     public ConnectionDetailsPanel details() {
