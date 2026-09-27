@@ -1,6 +1,5 @@
 package com.mmlinaric.remotemanager.ui.main;
 
-import com.mmlinaric.remotemanager.app.AppVersion;
 import com.mmlinaric.remotemanager.model.Connection;
 import com.mmlinaric.remotemanager.model.ConnectionFolder;
 import com.mmlinaric.remotemanager.persistence.FolderExpansionPreferences;
@@ -57,9 +56,6 @@ import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JList;
-import javax.swing.JMenu;
-import javax.swing.JMenuBar;
-import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
@@ -85,16 +81,11 @@ public final class MainWindow extends JFrame {
     private final JList<VaultEntry> identities = new JList<>();
     private final JLabel identityHint = new JLabel("  No identities yet. Create one here or while adding a host.");
     private final ActionAvailability actionAvailability = new ActionAvailability();
-    private JMenuItem unlockMenuItem;
-    private JMenuItem connectSelectedItem;
-    private JMenuItem copySudoSessionItem;
     private JButton copySudoButton;
     private JButton unlockWelcomeButton;
     private JButton openWelcomeButton;
     private JButton createWelcomeButton;
-    private JMenuItem openVaultMenuItem;
-    private JMenuItem createVaultMenuItem;
-    private JMenuItem exitMenuItem;
+    private final MainMenu.Controls menuControls;
     private JProgressBar creationProgress;
     private WorkspaceVault vault;
     private VaultWorkspace vaultWorkspace;
@@ -171,7 +162,8 @@ public final class MainWindow extends JFrame {
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
         setMinimumSize(new Dimension(800, 520));
         windowPreferences.restoreFrame(this);
-        setJMenuBar(menu());
+        this.menuControls = MainMenu.create(this, actionAvailability, menuActions());
+        setJMenuBar(menuControls.bar());
         installSudoShortcut();
         KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(terminalFontKeys);
         KeyboardFocusManager.getCurrentKeyboardFocusManager().addPropertyChangeListener("focusOwner", buttonFocus);
@@ -203,87 +195,28 @@ public final class MainWindow extends JFrame {
         });
     }
 
-    private JMenuBar menu() {
-        JMenuBar bar = new JMenuBar();
-        JMenu file = topMenu("File");
-        file.add(actionAvailability.vaultItem("New host", SilkIcons.NEW_CONNECTION, () -> editHost(null, null)));
-        file.add(actionAvailability.vaultItem("New folder", SilkIcons.NEW_FOLDER, () -> newFolder(null)));
-        file.add(actionAvailability.vaultItem("New identity", SilkIcons.NEW_IDENTITY, () -> editIdentity(null)));
-        file.addSeparator();
-        openVaultMenuItem = item("Open vault...", SilkIcons.OPEN_VAULT, this::openVault);
-        file.add(openVaultMenuItem);
-        createVaultMenuItem = item("Create vault...", SilkIcons.CREATE_VAULT, this::createVault);
-        file.add(createVaultMenuItem);
-        unlockMenuItem = item("Unlock vault", SilkIcons.UNLOCK, this::unlockVault);
-        file.add(unlockMenuItem);
-        file.add(actionAvailability.vaultItem("Lock vault", SilkIcons.LOCK, this::lockVault));
-        file.add(actionAvailability.vaultItem("Reload vault", SilkIcons.RECONNECT, this::reloadVault));
-        file.addSeparator();
-        exitMenuItem = item("Exit", SilkIcons.EXIT, this::closeWindow);
-        file.add(exitMenuItem);
-        bar.add(file);
-        JMenu host = topMenu("Host");
-        connectSelectedItem =
-                actionAvailability.selectedHostItem("Connect selected", SilkIcons.CONNECT, this::connectSelected);
-        host.add(connectSelectedItem);
-        host.add(actionAvailability.selectedHostItem("Edit selected", SilkIcons.EDIT, this::editSelectedHost));
-        host.add(actionAvailability.selectedHostItem("Delete selected", SilkIcons.DELETE, this::deleteSelectedHost));
-        bar.add(host);
-        JMenu session = topMenu("Session");
-        session.add(
-                actionAvailability.selectedSessionItem("Disconnect", SilkIcons.DISCONNECT, tabs::disconnectSelected));
-        session.add(actionAvailability.selectedSessionItem("Reconnect", SilkIcons.RECONNECT, tabs::reconnectSelected));
-        session.add(actionAvailability.selectedSessionItem("Close tab", SilkIcons.CLOSE, tabs::closeSelected));
-        session.addSeparator();
-        int shortcut = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
-        JMenuItem increaseFont = actionAvailability.selectedSessionItem(
-                "Increase font size", SilkIcons.FONT_INCREASE, () -> tabs.changeFontSize(1));
-        increaseFont.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_EQUALS, shortcut));
-        session.add(increaseFont);
-        JMenuItem decreaseFont = actionAvailability.selectedSessionItem(
-                "Decrease font size", SilkIcons.FONT_DECREASE, () -> tabs.changeFontSize(-1));
-        decreaseFont.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, shortcut));
-        session.add(decreaseFont);
-        JMenuItem resetFont =
-                actionAvailability.selectedSessionItem("Reset font size", SilkIcons.FONT, tabs::resetFontSize);
-        resetFont.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_0, shortcut));
-        session.add(resetFont);
-        session.addSeparator();
-        copySudoSessionItem = actionAvailability.selectedSessionItem(
-                "Copy sudo password", SilkIcons.COPY_PASSWORD, tabs::copySudoPassword);
-        session.add(copySudoSessionItem);
-        bar.add(session);
-        JMenu tools = topMenu("Tools");
-        tools.add(item("Settings", SilkIcons.SETTINGS, this::editSettings));
-        bar.add(tools);
-        JMenu help = topMenu("Help");
-        help.add(item("Check for updates...", SilkIcons.RECONNECT, updates::checkManually));
-        help.addSeparator();
-        help.add(item(
-                "About",
-                SilkIcons.ABOUT,
-                () -> JOptionPane.showMessageDialog(
-                        this,
-                        "Remote Manager " + AppVersion.display()
-                                + "\nSSH hosts and identities in a KeePass vault."
-                                + "\nIcons: FamFamFam Silk by Mark James (CC BY 2.5).",
-                        "About Remote Manager",
-                        JOptionPane.INFORMATION_MESSAGE)));
-        bar.add(help);
-        return bar;
-    }
-
-    private static JMenu topMenu(String title) {
-        JMenu menu = new JMenu(title);
-        int horizontalPadding = com.sun.jna.Platform.isLinux() ? 10 : 4;
-        menu.setBorder(BorderFactory.createEmptyBorder(0, horizontalPadding, 0, horizontalPadding));
-        return menu;
-    }
-
-    private static JMenuItem item(String title, javax.swing.Icon icon, Runnable action) {
-        JMenuItem item = new JMenuItem(title, icon);
-        item.addActionListener(event -> action.run());
-        return item;
+    private MainMenu.Actions menuActions() {
+        return new MainMenu.Actions(
+                new MainMenu.FileActions(
+                        () -> editHost(null, null),
+                        () -> newFolder(null),
+                        () -> editIdentity(null),
+                        this::openVault,
+                        this::createVault,
+                        this::unlockVault,
+                        this::lockVault,
+                        this::reloadVault,
+                        this::closeWindow),
+                new MainMenu.HostActions(this::connectSelected, this::editSelectedHost, this::deleteSelectedHost),
+                new MainMenu.SessionActions(
+                        tabs::disconnectSelected,
+                        tabs::reconnectSelected,
+                        tabs::closeSelected,
+                        () -> tabs.changeFontSize(1),
+                        () -> tabs.changeFontSize(-1),
+                        tabs::resetFontSize,
+                        tabs::copySudoPassword),
+                new MainMenu.ToolActions(this::editSettings, updates::checkManually));
     }
 
     private void updateActions() {
@@ -296,16 +229,17 @@ public final class MainWindow extends JFrame {
                 connectionTree.selectedValue() != null,
                 identities.getSelectedValue() != null,
                 !locked && tabs.getSelectedIndex() >= 0));
-        if (connectSelectedItem != null)
-            connectSelectedItem.setEnabled(vaultAvailable && connectionTree.selectedValue() instanceof Connection);
+        menuControls
+                .connectSelected()
+                .setEnabled(vaultAvailable && connectionTree.selectedValue() instanceof Connection);
         boolean canCopySudo = vaultAvailable && connectionTree.hasSudoPassword(tabs.selectedConnection());
-        if (copySudoSessionItem != null) copySudoSessionItem.setEnabled(canCopySudo);
+        menuControls.copySudoPassword().setEnabled(canCopySudo);
         if (copySudoButton != null) copySudoButton.setEnabled(canCopySudo);
-        if (unlockMenuItem != null) unlockMenuItem.setEnabled(!creatingVault && locked && vault != null);
+        menuControls.unlockVault().setEnabled(!creatingVault && locked && vault != null);
         if (unlockWelcomeButton != null) unlockWelcomeButton.setEnabled(!creatingVault && locked && vault != null);
-        if (openVaultMenuItem != null) openVaultMenuItem.setEnabled(!creatingVault && !savingVault);
-        if (createVaultMenuItem != null) createVaultMenuItem.setEnabled(!creatingVault && !savingVault);
-        if (exitMenuItem != null) exitMenuItem.setEnabled(!creatingVault);
+        menuControls.openVault().setEnabled(!creatingVault && !savingVault);
+        menuControls.createVault().setEnabled(!creatingVault && !savingVault);
+        menuControls.exit().setEnabled(!creatingVault);
         if (openWelcomeButton != null) openWelcomeButton.setEnabled(!creatingVault);
         if (createWelcomeButton != null) createWelcomeButton.setEnabled(!creatingVault);
     }
