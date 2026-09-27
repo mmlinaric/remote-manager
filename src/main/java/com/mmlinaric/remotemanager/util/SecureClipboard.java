@@ -9,6 +9,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
+/** Copies a secret for a bounded interval and clears it only when the clipboard still contains that value. */
 public final class SecureClipboard {
     private final Clipboard clipboard;
     private final ScheduledExecutorService scheduler;

@@ -29,6 +29,7 @@ import javax.swing.JPasswordField;
 import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
 
+/** Coordinates asynchronous SSH sessions and their tabs while keeping Swing mutations on the event thread. */
 public final class SessionTabs extends JTabbedPane {
     public static final int MIN_FONT_SIZE = 6;
     public static final int MAX_FONT_SIZE = 48;

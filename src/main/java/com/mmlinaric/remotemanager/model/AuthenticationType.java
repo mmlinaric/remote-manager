@@ -1,5 +1,6 @@
 package com.mmlinaric.remotemanager.model;
 
+/** The credential source used to authenticate an SSH connection. */
 public enum AuthenticationType {
     KDBX_PRIVATE_KEY("KeePass private key"),
     SSH_AGENT("SSH agent"),

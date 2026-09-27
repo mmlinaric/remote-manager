@@ -2,6 +2,7 @@ package com.mmlinaric.remotemanager.app;
 
 import java.nio.file.Path;
 
+/** Resolves the per-user application directory used for preferences and local SSH support files. */
 public final class AppPaths {
     private AppPaths() {}
 

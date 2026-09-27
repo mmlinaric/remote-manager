@@ -2,6 +2,7 @@ package com.mmlinaric.remotemanager.model;
 
 import java.util.UUID;
 
+/** Immutable host configuration whose credential IDs reference entries in the active vault. */
 public record Connection(
         UUID id,
         String name,

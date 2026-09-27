@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+/** Read-only view of an unlocked vault, with secrets returned only for explicit credential lookups. */
 public interface Vault {
     void unlock(char[] masterPassword) throws VaultException;
 

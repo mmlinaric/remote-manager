@@ -31,6 +31,7 @@ import net.schmizz.sshj.userauth.keyprovider.KeyProvider;
 import net.schmizz.sshj.userauth.password.PasswordFinder;
 import net.schmizz.sshj.userauth.password.Resource;
 
+/** Owns one SSHJ connection and its JediTerm bridge, including authentication material needed at connect time. */
 public final class SshRemoteSession implements RemoteSession {
     public interface KeyPassphrasePrompt {
         char[] ask(String keyName);

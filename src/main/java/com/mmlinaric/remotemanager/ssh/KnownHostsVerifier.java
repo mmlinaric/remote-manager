@@ -14,6 +14,7 @@ import net.schmizz.sshj.common.KeyType;
 import net.schmizz.sshj.transport.verification.HostKeyVerifier;
 import net.schmizz.sshj.transport.verification.OpenSSHKnownHosts;
 
+/** Enforces saved SSH host keys and asks the user before accepting a previously unknown key. */
 public final class KnownHostsVerifier implements HostKeyVerifier {
     public interface Prompt {
         boolean trustUnknown(String host, String address, String algorithm, String fingerprint);

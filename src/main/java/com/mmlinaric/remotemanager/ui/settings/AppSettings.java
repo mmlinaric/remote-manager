@@ -5,6 +5,7 @@ import com.mmlinaric.remotemanager.persistence.SettingsRepository;
 import java.io.IOException;
 import java.nio.file.Path;
 
+/** Immutable non-secret desktop preferences applied to sessions, updates, and vault activity handling. */
 public record AppSettings(
         String terminalFont,
         int terminalFontSize,

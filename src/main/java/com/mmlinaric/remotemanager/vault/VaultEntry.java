@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/** A password-free summary of a vault entry suitable for lists, selectors, and validation. */
 public record VaultEntry(
         UUID id,
         String title,
