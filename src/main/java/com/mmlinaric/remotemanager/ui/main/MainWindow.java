@@ -74,6 +74,7 @@ public final class MainWindow extends JFrame {
     private JButton createWelcomeButton;
     private final MainMenu.Controls menuControls;
     private JProgressBar creationProgress;
+    private VaultWindowView vaultView;
     private WorkspaceVault vault;
     private VaultWorkspace vaultWorkspace;
     private AppSettings preferences;
@@ -170,6 +171,7 @@ public final class MainWindow extends JFrame {
         openWelcomeButton = welcome.openButton();
         createWelcomeButton = welcome.createButton();
         creationProgress = welcome.creationProgress();
+        vaultView = new VaultWindowView(cards, vaultPath, status, vaultState);
         cards.add(welcome, "locked");
         cards.add(workspaceLayout.panel(), "workspace");
         add(cards, BorderLayout.CENTER);
@@ -256,16 +258,14 @@ public final class MainWindow extends JFrame {
 
     private void setSavingVault(boolean saving) {
         savingVault = saving;
-        if (saving) status.setText("Saving vault...");
+        if (saving) vaultView.showSaving();
         updateVaultState();
         updateActions();
     }
 
     private void showLocked() {
         locked = true;
-        vaultPath.setText(vault == null ? "No vault selected" : vault.path().toString());
-        ((CardLayout) cards.getLayout()).show(cards, "locked");
-        status.setText(vault == null ? "Create or open a KeePass vault to begin." : "Vault locked");
+        vaultView.showLocked(vault);
         updateVaultState();
         updateActions();
     }
@@ -276,10 +276,9 @@ public final class MainWindow extends JFrame {
         autoLock.reset();
         connectionsLoaded = false;
         connectionTree.restoreOnNextLoad(folderExpansion.load(vault.path()), "");
-        ((CardLayout) cards.getLayout()).show(cards, "workspace");
+        vaultView.showWorkspace(vault);
         if (!sidebarWidthInitialized) SwingUtilities.invokeLater(this::initializeSidebarWidth);
         if (!detailsHeightInitialized) SwingUtilities.invokeLater(this::initializeDetailsHeight);
-        status.setText("Vault unlocked: " + vault.path());
         updateVaultState();
         updateActions();
         refreshData(null);
@@ -744,13 +743,11 @@ public final class MainWindow extends JFrame {
     }
 
     private void showStatus(String text) {
-        status.setText(text);
+        vaultView.showStatus(text);
     }
 
     private void updateVaultState() {
-        vaultState.setText((locked ? "Locked" : "Unlocked: " + vault.path().getFileName())
-                + "  |  " + tabs.getTabCount() + " session" + (tabs.getTabCount() == 1 ? "" : "s")
-                + (savingVault ? "  |  Saving..." : ""));
+        vaultView.updateState(vault, locked, tabs.getTabCount(), savingVault);
     }
 
     private void showErrorLater(String message, Throwable error) {

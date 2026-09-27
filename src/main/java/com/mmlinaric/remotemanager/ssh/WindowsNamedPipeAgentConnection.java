@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
+/** Connects SSHJ's agent protocol to the Windows OpenSSH named pipe. */
 public final class WindowsNamedPipeAgentConnection implements AgentConnection {
     private static final String AGENT_PIPE = "\\\\.\\pipe\\openssh-ssh-agent";
     private static final int ERROR_MORE_DATA = 234;

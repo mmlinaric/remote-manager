@@ -13,6 +13,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletionException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -328,5 +329,24 @@ class VaultTest {
                             .map(ConnectionFolder::name)
                             .toList());
         }
+    }
+
+    @Test
+    void workspaceCreationRunsAsynchronouslyAndClearsSuppliedPasswords() throws Exception {
+        Path file = temp.resolve("created-workspace.kdbx");
+        char[] password = "master".toCharArray();
+
+        try (VaultWorkspace workspace = VaultWorkspace.create(file, password).join()) {
+            assertTrue(Files.exists(file));
+            assertTrue(workspace.vault().isUnlocked());
+            assertTrue(workspace.refresh().join().folders().isEmpty());
+        }
+        assertArrayEquals(new char[password.length], password);
+
+        char[] rejectedPassword = "master".toCharArray();
+        assertThrows(
+                CompletionException.class,
+                () -> VaultWorkspace.create(file, rejectedPassword).join());
+        assertArrayEquals(new char[rejectedPassword.length], rejectedPassword);
     }
 }

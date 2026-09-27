@@ -15,6 +15,7 @@ import javax.swing.JSpinner;
 import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
 
+/** Edits preferences as one validated settings value, leaving persistence to the caller. */
 public final class SettingsDialog {
     private SettingsDialog() {}
 

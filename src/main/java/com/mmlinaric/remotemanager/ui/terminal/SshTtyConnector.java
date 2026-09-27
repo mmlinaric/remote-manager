@@ -8,6 +8,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import net.schmizz.sshj.connection.channel.direct.Session;
 
+/** Adapts an SSH shell's UTF-8 streams to Jediterm's terminal connector contract. */
 public final class SshTtyConnector implements TtyConnector {
     private final Session.Shell shell;
     private final InputStreamReader reader;
