@@ -4,8 +4,6 @@ import com.mmlinaric.remotemanager.model.Connection;
 import com.mmlinaric.remotemanager.model.ConnectionFolder;
 import com.mmlinaric.remotemanager.persistence.FolderExpansionPreferences;
 import com.mmlinaric.remotemanager.persistence.SettingsRepository;
-import com.mmlinaric.remotemanager.ui.DialogEscape;
-import com.mmlinaric.remotemanager.ui.SilkIcons;
 import com.mmlinaric.remotemanager.ui.connections.ConnectionEditor;
 import com.mmlinaric.remotemanager.ui.connections.ConnectionTreePanel;
 import com.mmlinaric.remotemanager.ui.settings.AppSettings;
@@ -22,13 +20,8 @@ import com.mmlinaric.remotemanager.vault.kdbx.KdbxVault;
 import com.mmlinaric.remotemanager.workspace.VaultWorkspace;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
-import java.awt.Color;
-import java.awt.Component;
-import java.awt.Container;
-import java.awt.Dialog;
 import java.awt.Dimension;
 import java.awt.FileDialog;
-import java.awt.FlowLayout;
 import java.awt.KeyboardFocusManager;
 import java.awt.Toolkit;
 import java.awt.Window;
@@ -52,20 +45,16 @@ import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JComponent;
-import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
-import javax.swing.JPasswordField;
 import javax.swing.JProgressBar;
 import javax.swing.JSplitPane;
 import javax.swing.JTextField;
 import javax.swing.KeyStroke;
-import javax.swing.LayoutFocusTraversalPolicy;
 import javax.swing.SwingUtilities;
-import javax.swing.UIManager;
 
 /** Vault-first desktop workspace. All host and identity data comes from the unlocked KDBX file. */
 public final class MainWindow extends JFrame {
@@ -374,31 +363,8 @@ public final class MainWindow extends JFrame {
     }
 
     private void showUnlockDialog(WorkspaceVault selected) {
-        JPasswordField field = new JPasswordField(24);
-        JDialog dialog = new JDialog(this, "Unlock vault", Dialog.ModalityType.APPLICATION_MODAL);
-        JButton unlock = new JButton("Unlock", SilkIcons.UNLOCK);
-        JButton cancel = new JButton("Cancel", SilkIcons.CLOSE);
-        JLabel feedback = new JLabel();
-        feedback.setVisible(false);
-        dialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
-        unlock.addActionListener(event -> {
-            char[] password = field.getPassword();
-            if (password.length == 0) {
-                feedback.setForeground(new Color(0xB0, 0x20, 0x20));
-                feedback.setText("Enter your vault password.");
-                feedback.setVisible(true);
-                dialog.pack();
-                field.requestFocusInWindow();
-                return;
-            }
-            field.setText("");
-            field.setEnabled(false);
-            unlock.setEnabled(false);
-            cancel.setEnabled(false);
-            feedback.setForeground(UIManager.getColor("Label.foreground"));
-            feedback.setText("Unlocking vault...");
-            feedback.setVisible(true);
-            dialog.pack();
+        VaultUnlockDialog dialog = new VaultUnlockDialog(this);
+        dialog.setUnlockHandler(password -> {
             long version = ++operationVersion;
             status.setText("Unlocking vault...");
             vaultWorkspace
@@ -414,49 +380,12 @@ public final class MainWindow extends JFrame {
                             return;
                         }
                         showLocked();
-                        feedback.setForeground(new Color(0xB0, 0x20, 0x20));
-                        feedback.setText(unlockFailureMessage(error));
-                        dialog.pack();
-                        field.setEnabled(true);
-                        unlock.setEnabled(true);
-                        cancel.setEnabled(true);
-                        field.requestFocusInWindow();
+                        dialog.showFailure(unlockFailureMessage(error));
                     }));
         });
-        cancel.addActionListener(event -> dialog.dispose());
-        dialog.addWindowListener(new WindowAdapter() {
-            @Override
-            public void windowClosing(WindowEvent event) {
-                if (cancel.isEnabled()) cancel.doClick();
-            }
-        });
-        DialogEscape.bind(dialog, cancel);
-        field.addActionListener(event -> unlock.doClick());
-        JPanel content = new JPanel(new BorderLayout(0, 12));
-        content.setBorder(BorderFactory.createEmptyBorder(16, 18, 12, 18));
-        JPanel passwordRow = new JPanel(new BorderLayout(0, 6));
-        passwordRow.add(new JLabel("Vault password:"), BorderLayout.NORTH);
-        passwordRow.add(field, BorderLayout.CENTER);
-        passwordRow.add(feedback, BorderLayout.SOUTH);
-        content.add(passwordRow, BorderLayout.CENTER);
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-        buttons.add(unlock);
-        buttons.add(cancel);
-        content.add(buttons, BorderLayout.SOUTH);
-        dialog.setContentPane(content);
-        dialog.getRootPane().setDefaultButton(unlock);
-        dialog.setFocusTraversalPolicy(new LayoutFocusTraversalPolicy() {
-            @Override
-            public Component getDefaultComponent(Container container) {
-                return field;
-            }
-        });
-        dialog.pack();
-        dialog.setLocationRelativeTo(this);
         try {
             dialog.setVisible(true);
         } finally {
-            field.setText("");
             dialog.dispose();
         }
     }
