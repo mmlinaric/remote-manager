@@ -189,25 +189,12 @@ public final class KdbxVault implements WorkspaceVault {
             byte[] attachment)
             throws VaultException {
         requireUnlocked();
-        if (entryStore().find(id).isPresent()) throw new VaultException("Identity ID already exists");
-        KdbxEntries.rejectReservedFields(fields);
-        JacksonEntry entry = database.newEntry();
-        entry.setProperty(ID, id.toString());
-        entryStore().update(entry, title, username, password, fields, attachmentName, attachment);
-        groups().getOrCreateRoot(IDENTITY_ROOT, "Remote Manager Identities").addEntry(entry);
-        return id;
+        return identityStore().add(id, title, username, password, fields, attachmentName, attachment);
     }
 
     public synchronized void deleteIdentity(UUID id) throws VaultException {
-        JacksonEntry entry = entryStore().find(id).orElseThrow(() -> new VaultException("Identity is missing"));
-        if (KdbxEntries.hasRole(entry, HOST)
-                || KdbxEntries.hasRole(entry, HOST_SECRET)
-                || KdbxEntries.hasRole(entry, MARKER)) throw new VaultException("Identity is missing");
-        for (Connection connection : connections()) {
-            if (id.equals(connection.sshCredentialEntryId()) || id.equals(connection.sudoCredentialEntryId()))
-                throw new VaultException("Identity is used by host: " + connection.name());
-        }
-        entry.getParent().removeEntry(entry);
+        requireUnlocked();
+        identityStore().delete(id);
     }
 
     @Override
@@ -312,12 +299,8 @@ public final class KdbxVault implements WorkspaceVault {
             String attachmentName,
             byte[] attachment)
             throws VaultException {
-        JacksonEntry entry = entryStore().find(id).orElseThrow(() -> new VaultException("KeePass entry is missing"));
-        if (KdbxEntries.hasRole(entry, HOST)
-                || KdbxEntries.hasRole(entry, HOST_SECRET)
-                || KdbxEntries.hasRole(entry, MARKER)) throw new VaultException("Identity is missing");
-        KdbxEntries.rejectReservedFields(fields);
-        entryStore().update(entry, title, username, password, fields, attachmentName, attachment);
+        requireUnlocked();
+        identityStore().update(id, title, username, password, fields, attachmentName, attachment);
     }
 
     @Override
@@ -376,6 +359,11 @@ public final class KdbxVault implements WorkspaceVault {
     private KdbxConnectionStore connectionStore() throws VaultException {
         requireUnlocked();
         return new KdbxConnectionStore(database);
+    }
+
+    private KdbxIdentityStore identityStore() throws VaultException {
+        requireUnlocked();
+        return new KdbxIdentityStore(database, this::connections);
     }
 
     private void requireUnlocked() throws VaultException {
