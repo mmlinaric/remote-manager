@@ -3,11 +3,11 @@ package com.mmlinaric.remotemanager.connection;
 import javax.swing.JComponent;
 
 public interface RemoteSession {
-  void connect() throws Exception;
+    void connect() throws Exception;
 
-  void disconnect();
+    void disconnect();
 
-  boolean isConnected();
+    boolean isConnected();
 
-  JComponent component();
+    JComponent component();
 }

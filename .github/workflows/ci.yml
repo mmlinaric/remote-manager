@@ -20,5 +20,7 @@ jobs:
           cache: maven
       - name: Install virtual display
         run: sudo apt-get update && sudo apt-get install --yes xvfb xauth
+      - name: Check formatting
+        run: ./mvnw --batch-mode spotless:check
       - name: Run tests
         run: xvfb-run --auto-servernum ./mvnw --batch-mode test

@@ -10,15 +10,17 @@ import javax.swing.KeyStroke;
 
 /** Makes Escape take the same path as a dialog's Cancel button. */
 public final class DialogEscape {
-  private DialogEscape() {}
+    private DialogEscape() {}
 
-  public static void bind(JDialog dialog, JButton cancel) {
-    dialog.getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
-        .put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "cancelDialog");
-    dialog.getRootPane().getActionMap().put("cancelDialog", new AbstractAction() {
-      @Override public void actionPerformed(ActionEvent event) {
-        if (cancel.isEnabled()) cancel.doClick();
-      }
-    });
-  }
+    public static void bind(JDialog dialog, JButton cancel) {
+        dialog.getRootPane()
+                .getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+                .put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "cancelDialog");
+        dialog.getRootPane().getActionMap().put("cancelDialog", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent event) {
+                if (cancel.isEnabled()) cancel.doClick();
+            }
+        });
+    }
 }
