@@ -13,12 +13,9 @@ import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
@@ -39,10 +36,7 @@ public final class ConnectionTreePanel extends JPanel {
     private List<ConnectionFolder> folders = List.of();
     private List<Connection> connections = List.of();
     private Map<UUID, VaultEntry> identities = Map.of();
-    private final Set<UUID> expandedFolderIds = new HashSet<>();
-    private String selectedId = "";
-    private boolean loaded;
-    private boolean restoringTree;
+    private final ConnectionTreeState state = new ConnectionTreeState();
     private Runnable selectionChanged = () -> {};
 
     public ConnectionTreePanel(Actions actions) {
@@ -148,7 +142,7 @@ public final class ConnectionTreePanel extends JPanel {
         paths.sort(
                 Comparator.comparingInt((TreePath path) -> path.getPathCount()).reversed());
         paths.forEach(tree::collapsePath);
-        expandedFolderIds.clear();
+        state.clearExpandedFolders();
     }
 
     public List<ConnectionFolder> folders() {
@@ -202,85 +196,41 @@ public final class ConnectionTreePanel extends JPanel {
     }
 
     public void restoreOnNextLoad(String expandedIds, String selectedId) {
-        expandedFolderIds.clear();
-        for (String id : expandedIds.split(",")) {
-            try {
-                expandedFolderIds.add(UUID.fromString(id));
-            } catch (IllegalArgumentException ignored) {
-                /* Ignore stale or malformed display state. */
-            }
-        }
-        this.selectedId = selectedId;
-        // The current model may be the empty tree left by locking the vault.
-        loaded = false;
+        state.restoreOnNextLoad(expandedIds, selectedId);
     }
 
     public void clear() {
         folders = List.of();
         connections = List.of();
-        expandedFolderIds.clear();
-        selectedId = "";
-        loaded = false;
+        state.clear();
         emptyHint.setVisible(true);
-        restoringTree = true;
-        try {
-            tree.setModel(buildTree());
-        } finally {
-            restoringTree = false;
-        }
+        state.replaceModel(() -> tree.setModel(buildTree()));
         details.showConnection(null);
     }
 
     public void showConnections(List<ConnectionFolder> folders, List<Connection> connections) {
-        if (loaded) selectedId = selectedId();
+        state.prepareReload(tree);
         this.folders = folders;
         this.connections = connections;
-        expandedFolderIds.retainAll(folders.stream().map(folder -> folder.id()).collect(Collectors.toSet()));
+        state.retainFolders(folders);
         emptyHint.setVisible(connections.isEmpty());
-        restoringTree = true;
-        try {
+        state.replaceModel(() -> {
             tree.setModel(buildTree());
-            restoreState();
-        } finally {
-            restoringTree = false;
-        }
-        loaded = true;
+            state.restore(tree);
+        });
+        state.markLoaded();
     }
 
     public String expandedIds() {
-        return expandedFolderIds.stream().map(id -> id.toString()).sorted().collect(Collectors.joining(","));
+        return state.expandedIds();
     }
 
     public String selectedId() {
-        Object selected = selectedValue();
-        if (selected instanceof Connection connection) {
-            return connection.id().toString();
-        }
-        if (selected instanceof ConnectionFolder folder) {
-            return folder.id().toString();
-        }
-        return "";
+        return state.selectedId(tree);
     }
 
     public void reveal(UUID id) {
-        if (!(tree.getModel().getRoot() instanceof DefaultMutableTreeNode root)) {
-            return;
-        }
-        var nodes = root.depthFirstEnumeration();
-        while (nodes.hasMoreElements()) {
-            DefaultMutableTreeNode node = (DefaultMutableTreeNode) nodes.nextElement();
-            Object value = node.getUserObject();
-            UUID nodeId = value instanceof ConnectionFolder folder
-                    ? folder.id()
-                    : value instanceof Connection connection ? connection.id() : null;
-            if (id.equals(nodeId)) {
-                TreePath path = new TreePath(node.getPath());
-                tree.expandPath(path.getParentPath());
-                tree.setSelectionPath(path);
-                tree.scrollPathToVisible(path);
-                return;
-            }
-        }
+        state.reveal(tree, id);
     }
 
     private DefaultTreeModel buildTree() {
@@ -298,57 +248,8 @@ public final class ConnectionTreePanel extends JPanel {
         return new DefaultTreeModel(root);
     }
 
-    private void restoreState() {
-        if (!(tree.getModel().getRoot() instanceof DefaultMutableTreeNode root)) {
-            return;
-        }
-        Map<UUID, TreePath> folderPaths = new HashMap<>();
-        Map<String, TreePath> selectionPaths = new HashMap<>();
-        var nodes = root.depthFirstEnumeration();
-        while (nodes.hasMoreElements()) {
-            DefaultMutableTreeNode node = (DefaultMutableTreeNode) nodes.nextElement();
-            Object value = node.getUserObject();
-            if (value instanceof ConnectionFolder folder) {
-                TreePath path = new TreePath(node.getPath());
-                folderPaths.put(folder.id(), path);
-                selectionPaths.put(folder.id().toString(), path);
-            } else if (value instanceof Connection connection) {
-                selectionPaths.put(connection.id().toString(), new TreePath(node.getPath()));
-            }
-        }
-        folderPaths.entrySet().stream()
-                .filter(entry -> expandedFolderIds.contains(entry.getKey()))
-                .map(entry -> entry.getValue())
-                .sorted(Comparator.comparingInt((TreePath path) -> path.getPathCount()))
-                .forEach(tree::expandPath);
-        // Expanding a hidden child also opens its parent; close unsaved parents afterward.
-        folderPaths.entrySet().stream()
-                .filter(entry -> !expandedFolderIds.contains(entry.getKey()))
-                .map(entry -> entry.getValue())
-                .sorted(Comparator.comparingInt((TreePath path) -> path.getPathCount())
-                        .reversed())
-                .filter(tree::isExpanded)
-                .forEach(tree::collapsePath);
-        TreePath selectedPath = selectionPaths.get(selectedId);
-        if (selectedPath != null && isVisibleInExpandedFolders(selectedPath)) tree.setSelectionPath(selectedPath);
-    }
-
-    private boolean isVisibleInExpandedFolders(TreePath path) {
-        for (int index = 1; index < path.getPathCount() - 1; index++) {
-            if (path.getPathComponent(index) instanceof DefaultMutableTreeNode node
-                    && node.getUserObject() instanceof ConnectionFolder folder
-                    && !expandedFolderIds.contains(folder.id())) return false;
-        }
-        return true;
-    }
-
     private void recordExpansion(TreePath path, boolean expanded) {
-        if (restoringTree) return;
-        if (path.getLastPathComponent() instanceof DefaultMutableTreeNode node
-                && node.getUserObject() instanceof ConnectionFolder folder) {
-            if (expanded) expandedFolderIds.add(folder.id());
-            else expandedFolderIds.remove(folder.id());
-        }
+        state.recordExpansion(path, expanded);
     }
 
     public interface Actions {
