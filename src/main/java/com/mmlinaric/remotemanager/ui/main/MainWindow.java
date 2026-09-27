@@ -94,6 +94,7 @@ public final class MainWindow extends JFrame {
     private boolean connectionsLoaded;
     private long operationVersion;
     private final WorkspaceEditorController workspaceEditor;
+    private final SudoPasswordController sudoPasswords;
     private final SessionLaunchController sessionLauncher = new SessionLaunchController(
             this,
             connectionTree,
@@ -120,6 +121,8 @@ public final class MainWindow extends JFrame {
                 mutation -> mutateAndReveal(mutation::apply),
                 this::showError,
                 this::showErrorLater);
+        this.sudoPasswords =
+                new SudoPasswordController(connectionTree, tabs, () -> !locked && !savingVault, this::showStatus);
         this.workspaceLayout = new WorkspaceLayout(
                 connectionTree,
                 identities,
@@ -233,7 +236,7 @@ public final class MainWindow extends JFrame {
         menuControls
                 .connectSelected()
                 .setEnabled(vaultAvailable && connectionTree.selectedValue() instanceof Connection);
-        boolean canCopySudo = vaultAvailable && connectionTree.hasSudoPassword(tabs.selectedConnection());
+        boolean canCopySudo = sudoPasswords.canCopyForActiveSession();
         menuControls.copySudoPassword().setEnabled(canCopySudo);
         if (copySudoButton != null) copySudoButton.setEnabled(canCopySudo);
         menuControls.unlockVault().setEnabled(!creatingVault && locked && vault != null);
@@ -549,20 +552,7 @@ public final class MainWindow extends JFrame {
     }
 
     private void copySudoForFocusedContext() {
-        if (locked || savingVault) return;
-        Connection selectedHost = connectionTree.selectedValue() instanceof Connection host ? host : null;
-        boolean useTree = connectionTree.isTreeFocused();
-        Connection activeSession = tabs.selectedConnection();
-        Connection target = useTree ? selectedHost : activeSession;
-        if (target == null) target = selectedHost;
-        if (target == null) {
-            showStatus("Select a host or open a session to copy a sudo password");
-            return;
-        }
-        if (connectionTree.hasSudoPassword(target)) {
-            if (!useTree && activeSession != null) tabs.copySudoPassword();
-            else tabs.copySudoPassword(target);
-        } else showStatus("No sudo password is available for " + target.name());
+        sudoPasswords.copyForFocusedContext();
     }
 
     private void openHost(Connection host) {
@@ -681,7 +671,7 @@ public final class MainWindow extends JFrame {
 
         @Override
         public void copySudoPassword(Connection host) {
-            if (!locked && !savingVault && connectionTree.hasSudoPassword(host)) tabs.copySudoPassword(host);
+            sudoPasswords.copyForHost(host);
         }
 
         @Override
