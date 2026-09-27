@@ -21,7 +21,6 @@ import com.mmlinaric.remotemanager.vault.VaultEntry;
 import com.mmlinaric.remotemanager.vault.WorkspaceVault;
 import com.mmlinaric.remotemanager.vault.kdbx.KdbxVault;
 import com.mmlinaric.remotemanager.workspace.VaultWorkspace;
-import java.awt.AWTEvent;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
@@ -37,7 +36,6 @@ import java.awt.KeyEventDispatcher;
 import java.awt.KeyboardFocusManager;
 import java.awt.Toolkit;
 import java.awt.Window;
-import java.awt.event.AWTEventListener;
 import java.awt.event.ActionEvent;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
@@ -55,7 +53,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import javax.swing.AbstractAction;
 import javax.swing.AbstractButton;
 import javax.swing.BorderFactory;
@@ -81,7 +78,6 @@ import javax.swing.JToolBar;
 import javax.swing.KeyStroke;
 import javax.swing.LayoutFocusTraversalPolicy;
 import javax.swing.SwingUtilities;
-import javax.swing.Timer;
 import javax.swing.UIManager;
 
 /** Vault-first desktop workspace. All host and identity data comes from the unlocked KDBX file. */
@@ -126,8 +122,7 @@ public final class MainWindow extends JFrame {
     private final int initialSidebarWidth;
     private final int initialDetailsHeight;
     private int detailsHeight;
-    private final Timer autoLock = new Timer(15000, event -> checkAutoLock());
-    private final AWTEventListener activityListener = this::recordActivity;
+    private final AutoLockMonitor autoLock;
     private boolean locked = true;
     private boolean creatingVault;
     private boolean savingVault;
@@ -135,7 +130,6 @@ public final class MainWindow extends JFrame {
     private boolean detailsHeightInitialized;
     private boolean connectionsLoaded;
     private long operationVersion;
-    private long lastActivity = System.nanoTime();
 
     public MainWindow(SettingsRepository settings) {
         super("Remote Manager");
@@ -190,6 +184,8 @@ public final class MainWindow extends JFrame {
         south.add(updates.banner(), BorderLayout.NORTH);
         south.add(statusBar, BorderLayout.SOUTH);
         add(south, BorderLayout.SOUTH);
+        this.autoLock =
+                new AutoLockMonitor(this, () -> locked, () -> preferences.vaultAutoLockMinutes(), this::lockVault);
         showLocked();
         addWindowListener(new WindowAdapter() {
             @Override
@@ -197,11 +193,6 @@ public final class MainWindow extends JFrame {
                 closeWindow();
             }
         });
-        Toolkit.getDefaultToolkit()
-                .addAWTEventListener(
-                        activityListener,
-                        AWTEvent.KEY_EVENT_MASK | AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK);
-        autoLock.start();
     }
 
     private JPanel workspacePanel() {
@@ -459,7 +450,7 @@ public final class MainWindow extends JFrame {
     private void showWorkspace() {
         workspace();
         locked = false;
-        lastActivity = System.nanoTime();
+        autoLock.reset();
         connectionsLoaded = false;
         connectionTree.restoreOnNextLoad(folderExpansion.load(vault.path()), "");
         ((CardLayout) cards.getLayout()).show(cards, "workspace");
@@ -1053,24 +1044,6 @@ public final class MainWindow extends JFrame {
         }
     }
 
-    private void recordActivity(AWTEvent event) {
-        if (locked || !(event.getSource() instanceof Component component)) return;
-        Window owner = SwingUtilities.getWindowAncestor(component);
-        while (owner != null) {
-            if (owner == this) {
-                lastActivity = System.nanoTime();
-                return;
-            }
-            owner = owner.getOwner();
-        }
-    }
-
-    private void checkAutoLock() {
-        int minutes = preferences.vaultAutoLockMinutes();
-        if (!locked && minutes > 0 && System.nanoTime() - lastActivity >= TimeUnit.MINUTES.toNanos(minutes))
-            lockVault();
-    }
-
     private void closeWindow() {
         if (creatingVault) return;
         if ((getExtendedState() & Frame.MAXIMIZED_BOTH) != Frame.MAXIMIZED_BOTH) {
@@ -1095,8 +1068,7 @@ public final class MainWindow extends JFrame {
     @Override
     public void dispose() {
         operationVersion++;
-        autoLock.stop();
-        Toolkit.getDefaultToolkit().removeAWTEventListener(activityListener);
+        autoLock.close();
         KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(terminalFontKeys);
         KeyboardFocusManager.getCurrentKeyboardFocusManager().removePropertyChangeListener("focusOwner", buttonFocus);
         tabs.shutdown();
