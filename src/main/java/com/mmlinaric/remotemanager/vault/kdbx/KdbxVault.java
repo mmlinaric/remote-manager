@@ -7,7 +7,6 @@ import com.mmlinaric.remotemanager.model.ConnectionFolder;
 import com.mmlinaric.remotemanager.vault.HostSecretDraft;
 import com.mmlinaric.remotemanager.vault.IdentityDraft;
 import com.mmlinaric.remotemanager.vault.VaultAttachment;
-import com.mmlinaric.remotemanager.vault.VaultConflictException;
 import com.mmlinaric.remotemanager.vault.VaultEntry;
 import com.mmlinaric.remotemanager.vault.VaultException;
 import com.mmlinaric.remotemanager.vault.WorkspaceVault;
@@ -15,7 +14,6 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.List;
@@ -285,30 +283,10 @@ public final class KdbxVault implements WorkspaceVault {
 
     public synchronized void save(char[] masterPassword) throws VaultException {
         requireUnlocked();
-        try {
-            verifyUnchanged();
-            verifyMasterPassword(masterPassword);
-            Map<String, String> before = KdbxFileStore.snapshot(database);
-            Path temporary = Files.createTempFile(path.getParent(), ".remote-manager-", ".kdbx");
-            try {
-                try (OutputStream output = Files.newOutputStream(temporary)) {
-                    KdbxFileStore.write(database, masterPassword, output);
-                }
-                JacksonDatabase saved = KdbxFileStore.read(temporary, masterPassword);
-                if (!before.equals(KdbxFileStore.snapshot(saved)))
-                    throw new VaultException("KeePass vault changed during serialization");
-                verifyUnchanged();
-                Files.move(temporary, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-                database = saved;
-                loadedDigest = KdbxFileStore.digest(path);
-            } finally {
-                Files.deleteIfExists(temporary);
-            }
-        } catch (VaultConflictException error) {
-            throw error;
-        } catch (Exception error) {
-            throw new VaultException("Could not save KeePass vault", error);
-        }
+        KdbxVaultPersistence.SavedDatabase saved =
+                new KdbxVaultPersistence(path).save(database, masterPassword, loadedDigest);
+        database = saved.database();
+        loadedDigest = saved.digest();
     }
 
     private KdbxEntries entryStore() throws VaultException {
@@ -338,18 +316,5 @@ public final class KdbxVault implements WorkspaceVault {
 
     private void requireUnlocked() throws VaultException {
         if (database == null) throw new VaultException("Vault is locked");
-    }
-
-    private void verifyUnchanged() throws Exception {
-        if (!java.security.MessageDigest.isEqual(loadedDigest, KdbxFileStore.digest(path)))
-            throw new VaultConflictException();
-    }
-
-    private void verifyMasterPassword(char[] masterPassword) throws VaultException {
-        try {
-            KdbxFileStore.read(path, masterPassword);
-        } catch (Exception error) {
-            throw new VaultException("The vault master password is incorrect", error);
-        }
     }
 }
