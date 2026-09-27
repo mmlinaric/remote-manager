@@ -30,7 +30,6 @@ import java.awt.Dialog;
 import java.awt.Dimension;
 import java.awt.FileDialog;
 import java.awt.FlowLayout;
-import java.awt.Frame;
 import java.awt.GridBagLayout;
 import java.awt.KeyEventDispatcher;
 import java.awt.KeyboardFocusManager;
@@ -83,6 +82,7 @@ import javax.swing.UIManager;
 /** Vault-first desktop workspace. All host and identity data comes from the unlocked KDBX file. */
 public final class MainWindow extends JFrame {
     private final SettingsRepository settings;
+    private final WindowPreferences windowPreferences;
     private final UpdateController updates;
     private final FolderExpansionPreferences folderExpansion;
     private final JPanel cards = new JPanel(new CardLayout());
@@ -134,13 +134,13 @@ public final class MainWindow extends JFrame {
     public MainWindow(SettingsRepository settings) {
         super("Remote Manager");
         this.settings = settings;
+        this.windowPreferences = new WindowPreferences(settings);
         this.updates = new UpdateController(this, settings);
         this.folderExpansion = new FolderExpansionPreferences(settings);
         this.preferences = AppSettings.load(settings);
-        int savedSidebarWidth = number("window.divider", 320);
-        this.initialSidebarWidth = savedSidebarWidth < 190 ? 320 : savedSidebarWidth;
+        this.initialSidebarWidth = windowPreferences.sidebarWidth();
         this.workspace = createWorkspace();
-        int savedDetailsHeight = number("window.hostDetailsHeight", 0);
+        int savedDetailsHeight = windowPreferences.detailsHeight();
         this.initialDetailsHeight =
                 Math.max(savedDetailsHeight, connectionTree.details().getPreferredSize().height);
         workspace.addComponentListener(new ComponentAdapter() {
@@ -158,11 +158,7 @@ public final class MainWindow extends JFrame {
         settings.get("vault.path").ifPresent(path -> selectVault(new KdbxVault(Path.of(path))));
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
         setMinimumSize(new Dimension(800, 520));
-        setSize(number("window.width", 1120), number("window.height", 720));
-        int x = number("window.x", -1), y = number("window.y", -1);
-        if (x >= 0 && y >= 0) setLocation(x, y);
-        else setLocationRelativeTo(null);
-        setExtendedState(Frame.MAXIMIZED_BOTH);
+        windowPreferences.restoreFrame(this);
         setJMenuBar(menu());
         installSudoShortcut();
         KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(terminalFontKeys);
@@ -1046,16 +1042,14 @@ public final class MainWindow extends JFrame {
 
     private void closeWindow() {
         if (creatingVault) return;
-        if ((getExtendedState() & Frame.MAXIMIZED_BOTH) != Frame.MAXIMIZED_BOTH) {
-            saveSetting("window.x", Integer.toString(getX()));
-            saveSetting("window.y", Integer.toString(getY()));
-            saveSetting("window.width", Integer.toString(getWidth()));
-            saveSetting("window.height", Integer.toString(getHeight()));
-        }
-        if (sidebarWidthInitialized) saveSetting("window.divider", Integer.toString(workspace.getDividerLocation()));
         if (detailsHeightInitialized) {
             if (hosts.isShowing()) detailsHeight = currentDetailsHeight();
-            saveSetting("window.hostDetailsHeight", Integer.toString(detailsHeight));
+        }
+        try {
+            windowPreferences.saveFrame(
+                    this, workspace, sidebarWidthInitialized, detailsHeightInitialized, detailsHeight);
+        } catch (Exception error) {
+            showError("Could not save preference", error);
         }
         lockVault();
         dispose();
@@ -1076,14 +1070,6 @@ public final class MainWindow extends JFrame {
         VaultWorkspace currentWorkspace = workspace();
         if (currentWorkspace != null) currentWorkspace.close();
         super.dispose();
-    }
-
-    private int number(String key, int fallback) {
-        try {
-            return settings.get(key).map(Integer::parseInt).orElse(fallback);
-        } catch (Exception error) {
-            return fallback;
-        }
     }
 
     private void selectVault(WorkspaceVault selected) {
@@ -1113,7 +1099,7 @@ public final class MainWindow extends JFrame {
 
     private void saveSetting(String key, String value) {
         try {
-            settings.put(key, value);
+            windowPreferences.put(key, value);
         } catch (Exception error) {
             showError("Could not save preference", error);
         }
