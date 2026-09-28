@@ -12,12 +12,14 @@ class SshRemoteSessionAppearanceTest {
     @Test
     void updatesTheTerminalCanvasWhenAppearanceChanges() throws Exception {
         SwingUtilities.invokeAndWait(() -> {
-            SshRemoteSession session = new SshRemoteSession(
-                    null, null, Path.of("known_hosts"), null, null, "Monospaced", 13, 100, true);
+            SshRemoteSession session =
+                    new SshRemoteSession(null, null, Path.of("known_hosts"), null, null, "Monospaced", 13, 100, true);
             JediTermWidget terminal = (JediTermWidget) session.component();
             try {
-                assertEquals(new Color(0x1E, 0x1E, 0x1E), terminal.getTerminalPanel().getBackground());
-                assertEquals(new Color(0xD4, 0xD4, 0xD4), terminal.getTerminalPanel().getForeground());
+                assertEquals(
+                        new Color(0x1E, 0x1E, 0x1E), terminal.getTerminalPanel().getBackground());
+                assertEquals(
+                        new Color(0xD4, 0xD4, 0xD4), terminal.getTerminalPanel().getForeground());
 
                 session.setDarkAppearance(false);
 

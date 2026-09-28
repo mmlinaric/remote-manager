@@ -60,7 +60,8 @@ class SettingsTest {
 
             SettingsRepository reopened = new SettingsRepository(file);
             assertEquals(appearance, AppSettings.load(reopened).appearance());
-            assertEquals(appearance.persistedName(), reopened.get("ui.appearance").orElseThrow());
+            assertEquals(
+                    appearance.persistedName(), reopened.get("ui.appearance").orElseThrow());
         }
     }
 

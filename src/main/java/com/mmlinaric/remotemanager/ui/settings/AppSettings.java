@@ -18,14 +18,7 @@ public record AppSettings(
 
     public static AppSettings defaults() {
         return new AppSettings(
-                Appearance.SYSTEM,
-                InterfaceScale.PERCENT_100,
-                "Monospaced",
-                13,
-                5000,
-                30,
-                30,
-                AppPaths.knownHosts());
+                Appearance.SYSTEM, InterfaceScale.PERCENT_100, "Monospaced", 13, 5000, 30, 30, AppPaths.knownHosts());
     }
 
     public static AppSettings load(SettingsRepository repository) {

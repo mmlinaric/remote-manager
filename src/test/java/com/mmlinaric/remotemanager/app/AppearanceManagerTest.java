@@ -23,16 +23,12 @@ class AppearanceManagerTest {
         LookAndFeel previous = UIManager.getLookAndFeel();
         try {
             SwingUtilities.invokeAndWait(() -> {
-                assertEquals(
-                        Appearance.LIGHT,
-                        AppearanceManager.apply(Appearance.LIGHT, InterfaceScale.PERCENT_100));
+                assertEquals(Appearance.LIGHT, AppearanceManager.apply(Appearance.LIGHT, InterfaceScale.PERCENT_100));
                 assertInstanceOf(FlatLightLaf.class, UIManager.getLookAndFeel());
                 assertFalse(AppearanceManager.isDark());
                 assertSharedDefaults();
 
-                assertEquals(
-                        Appearance.DARK,
-                        AppearanceManager.apply(Appearance.DARK, InterfaceScale.PERCENT_100));
+                assertEquals(Appearance.DARK, AppearanceManager.apply(Appearance.DARK, InterfaceScale.PERCENT_100));
                 assertInstanceOf(FlatDarkLaf.class, UIManager.getLookAndFeel());
                 assertTrue(AppearanceManager.isDark());
                 assertSharedDefaults();
@@ -40,10 +36,8 @@ class AppearanceManagerTest {
                 SystemAppearanceDetector.ColorScheme systemScheme = SystemAppearanceDetector.detect();
                 if (systemScheme != SystemAppearanceDetector.ColorScheme.UNKNOWN) {
                     assertEquals(
-                            Appearance.SYSTEM,
-                            AppearanceManager.apply(Appearance.SYSTEM, InterfaceScale.PERCENT_100));
-                    assertEquals(
-                            systemScheme == SystemAppearanceDetector.ColorScheme.DARK, AppearanceManager.isDark());
+                            Appearance.SYSTEM, AppearanceManager.apply(Appearance.SYSTEM, InterfaceScale.PERCENT_100));
+                    assertEquals(systemScheme == SystemAppearanceDetector.ColorScheme.DARK, AppearanceManager.isDark());
                     assertSharedDefaults();
                 }
             });

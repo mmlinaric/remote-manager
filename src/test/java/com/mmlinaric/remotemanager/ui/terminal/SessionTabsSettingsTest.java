@@ -12,8 +12,7 @@ class SessionTabsSettingsTest {
     void interfaceScaleDoesNotCountAsATerminalFontChange() {
         AppSettings current = AppSettings.defaults();
 
-        assertFalse(SessionTabs.terminalFontChanged(
-                current, current.withInterfaceScale(InterfaceScale.PERCENT_150)));
+        assertFalse(SessionTabs.terminalFontChanged(current, current.withInterfaceScale(InterfaceScale.PERCENT_150)));
         assertTrue(SessionTabs.terminalFontChanged(
                 current,
                 new AppSettings(
