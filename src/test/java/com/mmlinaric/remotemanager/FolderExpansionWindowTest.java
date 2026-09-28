@@ -8,6 +8,7 @@ import com.mmlinaric.remotemanager.model.ConnectionFolder;
 import com.mmlinaric.remotemanager.persistence.SettingsRepository;
 import com.mmlinaric.remotemanager.ui.connections.ConnectionTreePanel;
 import com.mmlinaric.remotemanager.ui.main.MainWindow;
+import com.mmlinaric.remotemanager.ui.settings.AppSettings;
 import com.mmlinaric.remotemanager.vault.kdbx.KdbxVault;
 import java.awt.Frame;
 import java.awt.GraphicsEnvironment;
@@ -214,7 +215,7 @@ class FolderExpansionWindowTest {
         AtomicReference<MainWindow> result = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {
             try {
-                MainWindow window = new MainWindow(settings);
+                MainWindow window = new MainWindow(settings, AppSettings.load(settings));
                 vaultField.set(window, vault);
                 window.setExtendedState(Frame.NORMAL);
                 window.setSize(800, 650);

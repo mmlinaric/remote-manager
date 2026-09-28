@@ -3,6 +3,8 @@ package com.mmlinaric.remotemanager.ssh;
 import com.hierynomus.sshj.userauth.agent.AgentProxy;
 import com.hierynomus.sshj.userauth.agent.AuthAgent;
 import com.hierynomus.sshj.userauth.keyprovider.OpenSSHKeyV1KeyFile;
+import com.jediterm.terminal.TerminalColor;
+import com.jediterm.terminal.TextStyle;
 import com.jediterm.terminal.model.StyleState;
 import com.jediterm.terminal.model.TerminalTextBuffer;
 import com.jediterm.terminal.ui.JediTermWidget;
@@ -22,6 +24,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JComponent;
 import javax.swing.SwingUtilities;
@@ -44,6 +47,8 @@ public final class SshRemoteSession implements RemoteSession {
     private final KeyPassphrasePrompt passphrasePrompt;
     private final JediTermWidget terminal;
     private final AtomicReference<Font> terminalFont;
+    private final AtomicBoolean darkAppearance;
+    private final AtomicBoolean terminalCloseScheduled = new AtomicBoolean();
     private int fontSize;
 
     private volatile SSHClient client;
@@ -58,7 +63,8 @@ public final class SshRemoteSession implements RemoteSession {
             KeyPassphrasePrompt passphrasePrompt,
             String fontName,
             int fontSize,
-            int scrollback) {
+            int scrollback,
+            boolean darkAppearance) {
         this.connection = connection;
         this.vault = vault;
         this.knownHosts = knownHosts;
@@ -66,6 +72,7 @@ public final class SshRemoteSession implements RemoteSession {
         this.passphrasePrompt = passphrasePrompt;
         this.fontSize = fontSize;
         this.terminalFont = new AtomicReference<>(TerminalFonts.resolve(fontName, fontSize));
+        this.darkAppearance = new AtomicBoolean(darkAppearance);
         this.terminal = new ResizableTerminalWidget(new DefaultSettingsProvider() {
             @Override
             public Font getTerminalFont() {
@@ -75,6 +82,11 @@ public final class SshRemoteSession implements RemoteSession {
             @Override
             public int getBufferMaxLinesCount() {
                 return scrollback;
+            }
+
+            @Override
+            public TextStyle getDefaultStyle() {
+                return terminalStyle(SshRemoteSession.this.darkAppearance.get());
             }
         });
     }
@@ -90,9 +102,32 @@ public final class SshRemoteSession implements RemoteSession {
         ((ResizableTerminalWidget) terminal).refreshFont();
     }
 
+    /** Called on the Swing event thread to keep the terminal canvas aligned with the application appearance. */
+    public void setDarkAppearance(boolean dark) {
+        if (darkAppearance.getAndSet(dark) == dark) return;
+        ((ResizableTerminalWidget) terminal).refreshStyle();
+    }
+
+    private static TextStyle terminalStyle(boolean dark) {
+        if (dark) {
+            return new TextStyle(TerminalColor.rgb(0xD4, 0xD4, 0xD4), TerminalColor.rgb(0x1E, 0x1E, 0x1E));
+        }
+        return new TextStyle(TerminalColor.BLACK, TerminalColor.WHITE);
+    }
+
     private static final class ResizableTerminalWidget extends JediTermWidget {
+        private StyleState styleState;
+        private TextStyle defaultStyle;
+
         private ResizableTerminalWidget(SettingsProvider settings) {
             super(settings);
+        }
+
+        @Override
+        protected StyleState createDefaultStyle() {
+            styleState = super.createDefaultStyle();
+            defaultStyle = mySettingsProvider.getDefaultStyle();
+            return styleState;
         }
 
         @Override
@@ -103,6 +138,15 @@ public final class SshRemoteSession implements RemoteSession {
 
         private void refreshFont() {
             ((ResizableTerminalPanel) getTerminalPanel()).refreshFont();
+        }
+
+        private void refreshStyle() {
+            TextStyle currentStyle = styleState.getCurrent();
+            TextStyle nextDefaultStyle = mySettingsProvider.getDefaultStyle();
+            styleState.setDefaultStyle(nextDefaultStyle);
+            if (currentStyle.equals(defaultStyle)) styleState.setCurrent(nextDefaultStyle);
+            defaultStyle = nextDefaultStyle;
+            getTerminalPanel().repaint();
         }
     }
 
@@ -268,7 +312,7 @@ public final class SshRemoteSession implements RemoteSession {
                 // There is no further network resource to release.
             }
         }
-        SwingUtilities.invokeLater(terminal::close);
+        if (terminalCloseScheduled.compareAndSet(false, true)) SwingUtilities.invokeLater(terminal::close);
     }
 
     @Override

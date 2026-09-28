@@ -1,12 +1,11 @@
 package com.mmlinaric.remotemanager.app;
 
 import com.mmlinaric.remotemanager.persistence.SettingsRepository;
-import com.mmlinaric.remotemanager.ui.SelectionColors;
 import com.mmlinaric.remotemanager.ui.main.MainWindow;
+import com.mmlinaric.remotemanager.ui.settings.AppSettings;
 import java.nio.file.Files;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
-import javax.swing.UIManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,23 +30,11 @@ final class ApplicationBootstrap {
     }
 
     private void showWindow(SettingsRepository settings) {
-        configureSwingDefaults();
-        MainWindow window = new MainWindow(settings);
+        AppSettings preferences = AppSettings.load(settings);
+        preferences = preferences.withAppearance(AppearanceManager.apply(preferences.appearance()));
+        MainWindow window = new MainWindow(settings, preferences);
         DesktopWindowConfigurator.configure(window);
         window.setVisible(true);
         window.checkForUpdatesAutomatically();
-    }
-
-    private void configureSwingDefaults() {
-        try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception error) {
-            LOG.warn("Could not select the system look and feel", error);
-        }
-        UIManager.put("MenuItem.margin", new java.awt.Insets(0, 2, 0, 2));
-        UIManager.put("MenuItem.checkIcon", new EmptyMenuCheckIcon());
-        UIManager.put("MenuItem.afterCheckIconGap", 0);
-        UIManager.put("MenuItem.textIconGap", 1);
-        SelectionColors.configureTextInputs();
     }
 }

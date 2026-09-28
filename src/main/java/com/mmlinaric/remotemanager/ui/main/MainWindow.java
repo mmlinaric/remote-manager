@@ -1,5 +1,6 @@
 package com.mmlinaric.remotemanager.ui.main;
 
+import com.mmlinaric.remotemanager.app.AppearanceManager;
 import com.mmlinaric.remotemanager.model.Connection;
 import com.mmlinaric.remotemanager.model.ConnectionFolder;
 import com.mmlinaric.remotemanager.persistence.FolderExpansionPreferences;
@@ -104,13 +105,13 @@ public final class MainWindow extends JFrame {
             host -> editHost(host, host.parentFolderId()),
             this::showStatus);
 
-    public MainWindow(SettingsRepository settings) {
+    public MainWindow(SettingsRepository settings, AppSettings preferences) {
         super("Remote Manager");
         this.settings = settings;
         this.windowPreferences = new WindowPreferences(settings);
         this.updates = new UpdateController(this, settings);
         this.folderExpansion = new FolderExpansionPreferences(settings);
-        this.preferences = AppSettings.load(settings);
+        this.preferences = preferences;
         this.initialSidebarWidth = windowPreferences.sidebarWidth();
         this.workspaceEditor = new WorkspaceEditorController(
                 this,
@@ -561,8 +562,9 @@ public final class MainWindow extends JFrame {
     private void editSettings() {
         AppSettings changed = SettingsDialog.edit(this, preferences);
         if (changed == null) return;
+        changed = changed.withAppearance(AppearanceManager.apply(changed.appearance()));
         preferences = changed;
-        tabs.applyFontSettings(changed);
+        tabs.applySettings(changed);
         try {
             changed.save(settings);
             showStatus("Settings saved");

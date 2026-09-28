@@ -20,6 +20,8 @@ public final class SettingsDialog {
     private SettingsDialog() {}
 
     public static AppSettings edit(Window owner, AppSettings current) {
+        JComboBox<Appearance> appearance = new JComboBox<>(Appearance.values());
+        appearance.setSelectedItem(current.appearance());
         List<String> availableFonts = TerminalFonts.availableMonospacedFamilies();
         String selectedFont = current.terminalFont();
         if (!availableFonts.contains(selectedFont))
@@ -42,12 +44,13 @@ public final class SettingsDialog {
         JTextField knownHosts = new JTextField(current.knownHosts().toString(), 24);
 
         JPanel form = new JPanel(new GridBagLayout());
-        addRow(form, 0, "Terminal font", font);
-        addRow(form, 1, "Font size", fontSize);
-        addRow(form, 2, "Scrollback lines", scrollback);
-        addRow(form, 3, "Sudo clipboard seconds", clipboard);
-        addRow(form, 4, "Lock after inactivity", autoLock);
-        addRow(form, 5, "Known hosts file", knownHosts);
+        addRow(form, 0, "Appearance", appearance);
+        addRow(form, 1, "Terminal font", font);
+        addRow(form, 2, "Font size", fontSize);
+        addRow(form, 3, "Scrollback lines", scrollback);
+        addRow(form, 4, "Sudo clipboard seconds", clipboard);
+        addRow(form, 5, "Lock after inactivity", autoLock);
+        addRow(form, 6, "Known hosts file", knownHosts);
 
         if (JOptionPane.showConfirmDialog(
                         owner, form, "Settings", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE)
@@ -59,6 +62,7 @@ public final class SettingsDialog {
             return null;
         }
         return new AppSettings(
+                (Appearance) appearance.getSelectedItem(),
                 font.selectedFont(),
                 (Integer) fontSize.getValue(),
                 (Integer) scrollback.getValue(),
