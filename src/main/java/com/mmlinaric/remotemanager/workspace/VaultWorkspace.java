@@ -14,6 +14,8 @@ import java.util.concurrent.Executors;
  * dependency, so callers can run it on a worker thread and test its failure behavior directly.
  */
 public final class VaultWorkspace implements AutoCloseable {
+    public record CreationResult(VaultWorkspace workspace, KdbxVault.CreationProtection protection) {}
+
     private final WorkspaceVault vault;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
 
@@ -55,12 +57,16 @@ public final class VaultWorkspace implements AutoCloseable {
 
     /** Creates and unlocks a KDBX-backed workspace on its own serialized worker. */
     public static CompletableFuture<VaultWorkspace> create(Path path, char[] password) {
+        return createWithProtectionStatus(path, password).thenApply(CreationResult::workspace);
+    }
+
+    public static CompletableFuture<CreationResult> createWithProtectionStatus(Path path, char[] password) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                KdbxVault.create(path, password);
+                KdbxVault.CreationProtection protection = KdbxVault.createWithProtectionStatus(path, password);
                 KdbxVault vault = new KdbxVault(path);
                 vault.unlock(password);
-                return new VaultWorkspace(vault);
+                return new CreationResult(new VaultWorkspace(vault), protection);
             } catch (Exception error) {
                 throw new RuntimeException(error);
             } finally {

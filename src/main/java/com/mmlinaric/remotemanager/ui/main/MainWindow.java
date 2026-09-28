@@ -333,10 +333,10 @@ public final class MainWindow extends JFrame {
         creationProgress.setString("Creating " + path.getFileName() + "...");
         setCreatingVault(true);
         status.setText("Creating vault: " + path.getFileName() + "...");
-        VaultWorkspace.create(path, password)
+        VaultWorkspace.createWithProtectionStatus(path, password)
                 .whenComplete((created, error) -> SwingUtilities.invokeLater(() -> {
                     if (version != operationVersion || !isDisplayable()) {
-                        if (created != null) created.close();
+                        if (created != null) created.workspace().close();
                         if (isDisplayable()) setCreatingVault(false);
                         return;
                     }
@@ -346,9 +346,12 @@ public final class MainWindow extends JFrame {
                             showLocked();
                             return;
                         }
-                        selectWorkspace(created);
+                        selectWorkspace(created.workspace());
                         saveSetting("vault.path", path.toAbsolutePath().toString());
                         showWorkspace();
+                        if (created.protection() == KdbxVault.CreationProtection.UNSUPPORTED) {
+                            VaultDialogs.showUnsupportedVaultPermissions(this);
+                        }
                     } finally {
                         setCreatingVault(false);
                     }

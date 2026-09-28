@@ -31,25 +31,40 @@ public final class KdbxVault implements WorkspaceVault {
         this.path = path.toAbsolutePath();
     }
 
+    public enum CreationProtection {
+        OWNER_ONLY,
+        UNSUPPORTED
+    }
+
     @Override
     public Path path() {
         return path;
     }
 
     public static void create(Path path, char[] masterPassword) throws VaultException {
+        createWithProtectionStatus(path, masterPassword);
+    }
+
+    public static CreationProtection createWithProtectionStatus(Path path, char[] masterPassword)
+            throws VaultException {
         if (Files.exists(path)) throw new VaultException("Vault file already exists");
         boolean created = false;
         try {
-            Files.createDirectories(path.toAbsolutePath().getParent());
+            VaultFilePermissions.CreatedFile secured = VaultFilePermissions.createVaultFile(path);
+            created = true;
             JacksonDatabase fresh = new JacksonDatabase();
-            try (OutputStream output = Files.newOutputStream(path, StandardOpenOption.CREATE_NEW)) {
-                created = true;
+            try (OutputStream output = Files.newOutputStream(secured.path(), StandardOpenOption.WRITE)) {
                 KdbxFileStore.write(fresh, masterPassword, output);
             }
+            return secured.protection() == VaultFilePermissions.Protection.OWNER_ONLY
+                    ? CreationProtection.OWNER_ONLY
+                    : CreationProtection.UNSUPPORTED;
+        } catch (VaultFilePermissions.PermissionException error) {
+            throw new VaultException(error.getMessage(), error);
         } catch (Exception error) {
             if (created)
                 try {
-                    Files.deleteIfExists(path);
+                    Files.deleteIfExists(path.toAbsolutePath());
                 } catch (IOException ignored) {
                 }
             throw new VaultException("Could not create KeePass vault", error);

@@ -22,7 +22,7 @@ final class KdbxVaultPersistence {
             verifyUnchanged(loadedDigest);
             verifyMasterPassword(masterPassword);
             Map<String, String> before = KdbxFileStore.snapshot(database);
-            Path temporary = Files.createTempFile(path.getParent(), ".remote-manager-", ".kdbx");
+            Path temporary = VaultFilePermissions.createTemporaryFile(path, ".remote-manager-", ".kdbx");
             try {
                 try (OutputStream output = Files.newOutputStream(temporary)) {
                     KdbxFileStore.write(database, masterPassword, output);
