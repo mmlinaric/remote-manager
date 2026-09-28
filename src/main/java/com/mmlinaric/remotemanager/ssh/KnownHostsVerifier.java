@@ -9,6 +9,7 @@ import java.security.PublicKey;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import net.schmizz.sshj.common.Buffer;
 import net.schmizz.sshj.common.KeyType;
 import net.schmizz.sshj.transport.verification.HostKeyVerifier;
@@ -40,9 +41,9 @@ public final class KnownHostsVerifier implements HostKeyVerifier {
             return true;
         }
 
-        String adjustedHost = port == 22 ? hostname : "[" + hostname + "]:" + port;
+        String adjustedHost = adjustedHost(hostname, port);
         KeyType algorithm = KeyType.fromKey(key);
-        List<String> previous = matchingFingerprints(adjustedHost, algorithm);
+        List<String> previous = matchingFingerprints(adjustedHost(hostname.toLowerCase(Locale.ROOT), port));
         String fingerprint = fingerprint(key);
 
         if (!previous.isEmpty()) {
@@ -69,11 +70,11 @@ public final class KnownHostsVerifier implements HostKeyVerifier {
         return knownHosts.findExistingAlgorithms(hostname, port);
     }
 
-    private List<String> matchingFingerprints(String host, KeyType algorithm) {
+    private List<String> matchingFingerprints(String host) {
         List<String> result = new ArrayList<>();
         for (OpenSSHKnownHosts.KnownHostEntry entry : knownHosts.entries()) {
             try {
-                if (entry.appliesTo(algorithm, host)) {
+                if (entry.appliesTo(host)) {
                     result.add(fingerprintFromLine(entry.getLine()));
                 }
             } catch (IOException ignored) {
@@ -81,6 +82,10 @@ public final class KnownHostsVerifier implements HostKeyVerifier {
             }
         }
         return result;
+    }
+
+    private static String adjustedHost(String hostname, int port) {
+        return port == 22 ? hostname : "[" + hostname + "]:" + port;
     }
 
     private static String fingerprint(PublicKey key) {

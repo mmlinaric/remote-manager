@@ -19,6 +19,7 @@ import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.LayoutFocusTraversalPolicy;
@@ -58,6 +59,15 @@ final class VaultDialogs {
         DialogEscape.bind(dialog, cancel);
         showPasswordDialog(owner, dialog, first, second, fields, create, cancel);
         return accepted[0];
+    }
+
+    static void showUnsupportedVaultPermissions(Frame owner) {
+        JOptionPane.showMessageDialog(
+                owner,
+                "The vault was created, but owner-only permissions could not be enforced on this filesystem. "
+                        + "Other local users may be able to copy the encrypted vault.",
+                "Vault permissions",
+                JOptionPane.WARNING_MESSAGE);
     }
 
     private static JPanel passwordFields(JPasswordField first, JPasswordField second, JLabel feedback) {
