@@ -85,7 +85,7 @@ final class VaultFilePermissions {
             if (protection != null) {
                 Path temporary = Files.createTempFile(parent, prefix, suffix, aclAttribute(protection.acl()));
                 try {
-                    verifyOwnerOnlyAcl(temporary, protection.owner(), protection.acl());
+                    establishOwnerOnlyAcl(temporary, protection.owner(), protection.acl());
                     return temporary;
                 } catch (IOException | RuntimeException error) {
                     deleteCreated(temporary, error);
@@ -137,7 +137,7 @@ final class VaultFilePermissions {
             List<AclEntry> acl = ownerOnlyAcl(owner);
             Files.createFile(file, aclAttribute(acl));
             created = true;
-            verifyOwnerOnlyAcl(file, owner, acl);
+            establishOwnerOnlyAcl(file, owner, acl);
             return new CreatedFile(file, Protection.OWNER_ONLY);
         } catch (FileAlreadyExistsException error) {
             throw error;
@@ -192,9 +192,13 @@ final class VaultFilePermissions {
         return view.getAcl().equals(expected) ? new OwnerOnlyAcl(owner, expected) : null;
     }
 
-    private static void verifyOwnerOnlyAcl(Path path, UserPrincipal owner, List<AclEntry> expected) throws IOException {
+    private static void establishOwnerOnlyAcl(Path path, UserPrincipal owner, List<AclEntry> expected)
+            throws IOException {
         AclFileAttributeView view =
                 Files.getFileAttributeView(path, AclFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
+        if (view != null && !view.getOwner().equals(owner)) {
+            view.setOwner(owner);
+        }
         if (view == null || !view.getOwner().equals(owner) || !view.getAcl().equals(expected)) {
             throw new IOException("Could not establish an owner-only ACL for " + path);
         }
