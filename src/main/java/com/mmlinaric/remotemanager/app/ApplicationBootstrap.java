@@ -31,7 +31,8 @@ final class ApplicationBootstrap {
 
     private void showWindow(SettingsRepository settings) {
         AppSettings preferences = AppSettings.load(settings);
-        preferences = preferences.withAppearance(AppearanceManager.apply(preferences.appearance()));
+        preferences = preferences.withAppearance(
+                AppearanceManager.apply(preferences.appearance(), preferences.interfaceScale()));
         MainWindow window = new MainWindow(settings, preferences);
         DesktopWindowConfigurator.configure(window);
         window.setVisible(true);

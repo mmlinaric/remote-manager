@@ -562,9 +562,10 @@ public final class MainWindow extends JFrame {
     private void editSettings() {
         AppSettings changed = SettingsDialog.edit(this, preferences);
         if (changed == null) return;
-        changed = changed.withAppearance(AppearanceManager.apply(changed.appearance()));
+        AppSettings previous = preferences;
+        changed = changed.withAppearance(AppearanceManager.apply(changed.appearance(), changed.interfaceScale()));
         preferences = changed;
-        tabs.applySettings(changed);
+        tabs.applySettings(previous, changed);
         try {
             changed.save(settings);
             showStatus("Settings saved");

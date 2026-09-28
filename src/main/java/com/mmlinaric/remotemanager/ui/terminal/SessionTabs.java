@@ -133,12 +133,20 @@ public final class SessionTabs extends JTabbedPane {
         status.accept("Terminal font size: " + size);
     }
 
-    public void applySettings(AppSettings preferences) {
+    public void applySettings(AppSettings previous, AppSettings preferences) {
+        boolean terminalFontChanged = terminalFontChanged(previous, preferences);
         boolean darkAppearance = AppearanceManager.isDark();
         for (OpenTab tab : openTabs.values()) {
-            tab.session().setTerminalFont(preferences.terminalFont(), preferences.terminalFontSize());
+            if (terminalFontChanged) {
+                tab.session().setTerminalFont(preferences.terminalFont(), preferences.terminalFontSize());
+            }
             tab.session().setDarkAppearance(darkAppearance);
         }
+    }
+
+    static boolean terminalFontChanged(AppSettings previous, AppSettings current) {
+        return !previous.terminalFont().equals(current.terminalFont())
+                || previous.terminalFontSize() != current.terminalFontSize();
     }
 
     public void copySudoPassword(Connection connection) {

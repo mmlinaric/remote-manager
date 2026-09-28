@@ -1,15 +1,23 @@
 package com.mmlinaric.remotemanager.app;
 
 import com.formdev.flatlaf.FlatDarkLaf;
+import com.formdev.flatlaf.FlatLaf;
 import com.formdev.flatlaf.FlatLightLaf;
+import com.formdev.flatlaf.util.UIScale;
 import com.mmlinaric.remotemanager.ui.SelectionColors;
 import com.mmlinaric.remotemanager.ui.settings.Appearance;
+import com.mmlinaric.remotemanager.ui.settings.InterfaceScale;
 import java.awt.Color;
+import java.awt.Font;
 import java.awt.Insets;
 import java.awt.Window;
+import java.util.ArrayList;
+import java.util.List;
+import javax.swing.UIDefaults;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
+import javax.swing.plaf.FontUIResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,8 +27,8 @@ public final class AppearanceManager {
 
     private AppearanceManager() {}
 
-    /** Applies the requested appearance and returns the effective appearance. */
-    public static Appearance apply(Appearance requested) {
+    /** Applies the requested visual settings and returns the effective appearance. */
+    public static Appearance apply(Appearance requested, InterfaceScale scale) {
         Appearance effective = requested;
         try {
             install(requested);
@@ -29,6 +37,7 @@ public final class AppearanceManager {
             effective = Appearance.SYSTEM;
             installFallback();
         }
+        applyScale(scale);
         configureDefaults();
         refreshWindows();
         return effective;
@@ -68,6 +77,28 @@ public final class AppearanceManager {
                 UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
             } catch (Exception crossPlatformError) {
                 LOG.error("Could not apply a fallback look and feel", crossPlatformError);
+            }
+        }
+    }
+
+    private static void applyScale(InterfaceScale scale) {
+        UIScale.setZoomFactor(scale.factor());
+        if (!(UIManager.getLookAndFeel() instanceof FlatLaf)) {
+            scaleNativeFonts(scale.factor());
+        }
+    }
+
+    private static void scaleNativeFonts(float factor) {
+        if (factor == 1f) return;
+        UIDefaults defaults = UIManager.getLookAndFeelDefaults();
+        List<Object> fontKeys = new ArrayList<>();
+        for (Object key : defaults.keySet()) {
+            if (defaults.get(key) instanceof FontUIResource) fontKeys.add(key);
+        }
+        for (Object key : fontKeys) {
+            Font font = defaults.getFont(key);
+            if (font != null) {
+                defaults.put(key, new FontUIResource(font.deriveFont(font.getSize2D() * factor)));
             }
         }
     }

@@ -31,6 +31,9 @@ The app offers System, Light, and Dark appearances in Settings. On Linux, System
 preference when available and otherwise uses the native Swing look and feel. Appearance changes apply immediately,
 include the default terminal canvas, and are remembered for the next launch.
 
+The non-terminal interface can be scaled from 100% to 200% in Settings. This changes the host tree, identity list,
+menus, dialogs, controls, spacing, and icons immediately. Terminal font family and size remain separate settings.
+
 ## Install and update
 
 Published releases are available from the repository's GitHub Releases page:
@@ -65,7 +68,7 @@ Hosts and folders are stored inside the selected KDBX file, together with identi
 
 KeePassJava2 reads and writes common KDBX4 vaults, including those created by KeePassXC. Vaults using KeePass features that KeePassJava2 cannot parse are rejected. Back up any external KeePass vault before editing it with Remote Manager, since uncommon KeePass extensions may not round-trip.
 
-The only separate app data is `settings.properties` under the OS-specific Remote Manager data directory. It stores the selected vault path, window geometry, appearance, terminal preferences, known-hosts path, auto-lock setting, and open-folder display state for each vault. Folder state uses opaque IDs, without folder names. It contains no host details or secrets. SQLite and Flyway are no longer used. Old `connections.db` files are not read.
+The only separate app data is `settings.properties` under the OS-specific Remote Manager data directory. It stores the selected vault path, window geometry, appearance, interface scale, terminal preferences, known-hosts path, auto-lock setting, and open-folder display state for each vault. Folder state uses opaque IDs, without folder names. It contains no host details or secrets. SQLite and Flyway are no longer used. Old `connections.db` files are not read.
 
 Vault writes check for changes made by another application and reject a conflicting save. Reload the vault to see external edits. The app writes a temporary KDBX file and replaces the original only after checking that the new file can be opened. Keep normal backups of your vault.
 
