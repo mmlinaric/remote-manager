@@ -2,6 +2,7 @@ package com.mmlinaric.remotemanager;
 
 import com.mmlinaric.remotemanager.persistence.SettingsRepository;
 import com.mmlinaric.remotemanager.ui.main.MainWindow;
+import com.mmlinaric.remotemanager.ui.settings.AppSettings;
 import com.mmlinaric.remotemanager.vault.kdbx.KdbxVault;
 import java.awt.Component;
 import java.awt.Container;
@@ -63,7 +64,7 @@ class VaultUnlockWindowTest {
         AtomicReference<MainWindow> result = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {
             try {
-                MainWindow window = new MainWindow(settings);
+                MainWindow window = new MainWindow(settings, AppSettings.load(settings));
                 window.setExtendedState(Frame.NORMAL);
                 window.setSize(800, 650);
                 window.setLocation(-3000, -3000);

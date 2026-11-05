@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import com.mmlinaric.remotemanager.persistence.SettingsRepository;
 import com.mmlinaric.remotemanager.ui.main.MainWindow;
+import com.mmlinaric.remotemanager.ui.settings.AppSettings;
 import java.awt.Frame;
 import java.awt.GraphicsEnvironment;
 import java.awt.Toolkit;
@@ -23,7 +24,8 @@ class MainWindowTest {
         Assumptions.assumeFalse(GraphicsEnvironment.isHeadless());
         SwingUtilities.invokeAndWait(() -> {
             try {
-                MainWindow window = new MainWindow(new SettingsRepository(temp.resolve("settings.properties")));
+                SettingsRepository settings = new SettingsRepository(temp.resolve("settings.properties"));
+                MainWindow window = new MainWindow(settings, AppSettings.load(settings));
                 try {
                     window.setVisible(true);
                     assertFalse(window.getJMenuBar().getMenu(0).getItem(0).isEnabled());

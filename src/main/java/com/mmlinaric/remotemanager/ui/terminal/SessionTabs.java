@@ -1,5 +1,6 @@
 package com.mmlinaric.remotemanager.ui.terminal;
 
+import com.mmlinaric.remotemanager.app.AppearanceManager;
 import com.mmlinaric.remotemanager.model.AuthenticationType;
 import com.mmlinaric.remotemanager.model.Connection;
 import com.mmlinaric.remotemanager.ssh.SshRemoteSession;
@@ -132,10 +133,20 @@ public final class SessionTabs extends JTabbedPane {
         status.accept("Terminal font size: " + size);
     }
 
-    public void applyFontSettings(AppSettings preferences) {
+    public void applySettings(AppSettings previous, AppSettings preferences) {
+        boolean terminalFontChanged = terminalFontChanged(previous, preferences);
+        boolean darkAppearance = AppearanceManager.isDark();
         for (OpenTab tab : openTabs.values()) {
-            tab.session().setTerminalFont(preferences.terminalFont(), preferences.terminalFontSize());
+            if (terminalFontChanged) {
+                tab.session().setTerminalFont(preferences.terminalFont(), preferences.terminalFontSize());
+            }
+            tab.session().setDarkAppearance(darkAppearance);
         }
+    }
+
+    static boolean terminalFontChanged(AppSettings previous, AppSettings current) {
+        return !previous.terminalFont().equals(current.terminalFont())
+                || previous.terminalFontSize() != current.terminalFontSize();
     }
 
     public void copySudoPassword(Connection connection) {
@@ -200,7 +211,8 @@ public final class SessionTabs extends JTabbedPane {
                 securityPrompts::askKeyPassphrase,
                 preferences.terminalFont(),
                 preferences.terminalFontSize(),
-                preferences.scrollbackLines());
+                preferences.scrollbackLines(),
+                AppearanceManager.isDark());
         OpenTab tab = new OpenTab(connection, session, new AtomicBoolean());
         JComponent component = session.component();
         openTabs.put(component, tab);
