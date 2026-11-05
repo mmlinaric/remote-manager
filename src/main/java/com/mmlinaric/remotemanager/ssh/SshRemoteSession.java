@@ -30,6 +30,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JComponent;
 import javax.swing.SwingUtilities;
+import net.schmizz.keepalive.KeepAliveProvider;
+import net.schmizz.sshj.DefaultConfig;
 import net.schmizz.sshj.SSHClient;
 import net.schmizz.sshj.connection.channel.direct.Session;
 import net.schmizz.sshj.userauth.keyprovider.KeyProvider;
@@ -42,6 +44,9 @@ public final class SshRemoteSession implements RemoteSession {
         char[] ask(String keyName);
     }
 
+    /** With SSHJ's limit of five unanswered keep-alives, a silently dropped network is noticed in about a minute. */
+    private static final int KEEP_ALIVE_INTERVAL_SECONDS = 10;
+
     private final Connection connection;
     private final Vault vault;
     private final Path knownHosts;
@@ -52,6 +57,7 @@ public final class SshRemoteSession implements RemoteSession {
     private final AtomicBoolean darkAppearance;
     private final AtomicBoolean terminalCloseScheduled = new AtomicBoolean();
     private int fontSize;
+    private volatile Runnable sessionEnded = () -> {};
 
     private volatile SSHClient client;
     private volatile Session channel;
@@ -98,6 +104,12 @@ public final class SshRemoteSession implements RemoteSession {
                         : super.getTerminalColorPalette();
             }
         });
+        terminal.addListener(widget -> handleTerminalEnded());
+    }
+
+    /** Registers the callback run on a background thread when the terminal stops, whatever the cause. */
+    public void onSessionEnded(Runnable listener) {
+        sessionEnded = listener;
     }
 
     public int fontSize() {
@@ -172,12 +184,16 @@ public final class SshRemoteSession implements RemoteSession {
 
     @Override
     public void connect() throws Exception {
-        SSHClient ssh = new SSHClient();
+        DefaultConfig config = new DefaultConfig();
+        config.setKeepAliveProvider(KeepAliveProvider.KEEP_ALIVE);
+        SSHClient ssh = new SSHClient(config);
         client = ssh;
         try {
             ssh.setConnectTimeout(10000);
             ssh.setTimeout(10000);
             ssh.addHostKeyVerifier(new KnownHostsVerifier(knownHosts, hostPrompt));
+            // SSHJ only starts the keep-alive thread during connect, so the interval must already be set.
+            ssh.getConnection().getKeepAlive().setKeepAliveInterval(KEEP_ALIVE_INTERVAL_SECONDS);
             ssh.connect(connection.hostname(), connection.port());
             authenticate(ssh);
 
@@ -302,6 +318,20 @@ public final class SshRemoteSession implements RemoteSession {
 
     @Override
     public void disconnect() {
+        closeSshResources();
+        if (terminalCloseScheduled.compareAndSet(false, true)) SwingUtilities.invokeLater(terminal::close);
+    }
+
+    /** Leaves the terminal widget open so the output of an ended session can still be read. */
+    private void handleTerminalEnded() {
+        try {
+            sessionEnded.run();
+        } finally {
+            closeSshResources();
+        }
+    }
+
+    private void closeSshResources() {
         Session currentChannel = channel;
         SSHClient currentClient = client;
         channel = null;
@@ -321,12 +351,14 @@ public final class SshRemoteSession implements RemoteSession {
                 // There is no further network resource to release.
             }
         }
-        if (terminalCloseScheduled.compareAndSet(false, true)) SwingUtilities.invokeLater(terminal::close);
     }
 
     @Override
     public boolean isConnected() {
-        return client != null && client.isConnected() && shell != null && shell.isOpen();
+        // Another thread may clear these fields while the session ends, so check one snapshot of each.
+        SSHClient currentClient = client;
+        Session.Shell currentShell = shell;
+        return currentClient != null && currentClient.isConnected() && currentShell != null && currentShell.isOpen();
     }
 
     @Override

@@ -214,6 +214,7 @@ public final class SessionTabs extends JTabbedPane {
                 preferences.scrollbackLines(),
                 AppearanceManager.isDark());
         OpenTab tab = new OpenTab(connection, session, new AtomicBoolean());
+        session.onSessionEnded(() -> SwingUtilities.invokeLater(() -> showSessionEnded(tab)));
         JComponent component = session.component();
         openTabs.put(component, tab);
         addTab(connection.name() + " (connecting)", SilkIcons.CONNECTING, component);
@@ -234,8 +235,7 @@ public final class SessionTabs extends JTabbedPane {
                 }
                 SwingUtilities.invokeLater(() -> {
                     if (version != operationVersion.get() || tab.closed().get()) return;
-                    updateTitle(tab, "connected");
-                    status.accept("Connected to " + connection.hostname());
+                    showConnected(tab);
                 });
             } catch (Exception error) {
                 SwingUtilities.invokeLater(() -> {
@@ -245,6 +245,22 @@ public final class SessionTabs extends JTabbedPane {
                 });
             }
         });
+    }
+
+    /** The shell can exit before this runs, so a session that already ended must not be labelled connected. */
+    private void showConnected(OpenTab tab) {
+        if (!tab.session().isConnected()) {
+            updateTitle(tab, "disconnected");
+            return;
+        }
+        updateTitle(tab, "connected");
+        status.accept("Connected to " + tab.connection().hostname());
+    }
+
+    private void showSessionEnded(OpenTab tab) {
+        if (tab.closed().get()) return;
+        updateTitle(tab, "disconnected");
+        status.accept("Connection to " + tab.connection().hostname() + " closed");
     }
 
     private OpenTab selectedTab() {
