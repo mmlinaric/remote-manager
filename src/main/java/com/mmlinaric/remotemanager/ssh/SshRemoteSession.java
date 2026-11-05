@@ -5,6 +5,7 @@ import com.hierynomus.sshj.userauth.agent.AuthAgent;
 import com.hierynomus.sshj.userauth.keyprovider.OpenSSHKeyV1KeyFile;
 import com.jediterm.terminal.TerminalColor;
 import com.jediterm.terminal.TextStyle;
+import com.jediterm.terminal.emulator.ColorPalette;
 import com.jediterm.terminal.model.StyleState;
 import com.jediterm.terminal.model.TerminalTextBuffer;
 import com.jediterm.terminal.ui.JediTermWidget;
@@ -13,6 +14,7 @@ import com.jediterm.terminal.ui.settings.DefaultSettingsProvider;
 import com.jediterm.terminal.ui.settings.SettingsProvider;
 import com.mmlinaric.remotemanager.connection.RemoteSession;
 import com.mmlinaric.remotemanager.model.Connection;
+import com.mmlinaric.remotemanager.ui.terminal.DarkTerminalPalette;
 import com.mmlinaric.remotemanager.ui.terminal.SshTtyConnector;
 import com.mmlinaric.remotemanager.ui.terminal.TerminalFonts;
 import com.mmlinaric.remotemanager.vault.Vault;
@@ -87,6 +89,13 @@ public final class SshRemoteSession implements RemoteSession {
             @Override
             public TextStyle getDefaultStyle() {
                 return terminalStyle(SshRemoteSession.this.darkAppearance.get());
+            }
+
+            @Override
+            public ColorPalette getTerminalColorPalette() {
+                return SshRemoteSession.this.darkAppearance.get()
+                        ? DarkTerminalPalette.INSTANCE
+                        : super.getTerminalColorPalette();
             }
         });
     }
